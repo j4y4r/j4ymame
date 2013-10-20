@@ -1,0 +1,4755 @@
+diff -Nru src/emu/clifront.c src/emu/clifront.c
+--- src/emu/clifront.c	2012-07-08 12:49:40.000000000 +0200
++++ src/emu/clifront.c	2012-07-08 13:15:43.000000000 +0200
+@@ -1443,7 +1443,7 @@
+ 
+ void cli_frontend::display_help()
+ {
+-	mame_printf_info("%s v%s - %s\n%s\n\n", emulator_info::get_applongname(),build_version,emulator_info::get_fulllongname(),emulator_info::get_copyright_info());
++	mame_printf_info("%s v%s SwitchRes Patch %s - %s\n%s\n\n", emulator_info::get_applongname(),build_version,emulator_info::get_fulllongname(),SWITCHRES_VERSION,emulator_info::get_copyright_info());
+ 	mame_printf_info("%s\n", emulator_info::get_disclaimer());
+ 	emulator_info::printf_usage(emulator_info::get_appname(),emulator_info::get_gamenoun());
+ 	mame_printf_info("\n\n"
+diff -Nru src/emu/emu.h src/emu/emu.h
+--- src/emu/emu.h	2012-05-03 11:10:56.000000000 +0200
++++ src/emu/emu.h	2012-07-08 13:15:43.000000000 +0200
+@@ -149,6 +149,9 @@
+ // networking
+ #include "network.h"
+ 
++// Switchres
++#include "switchres/switchres.h"
++
+ // the running machine
+ #include "machine.h"
+ #include "driver.h"
+diff -Nru src/emu/emu.mak src/emu/emu.mak
+--- src/emu/emu.mak	2012-07-08 13:13:00.000000000 +0200
++++ src/emu/emu.mak	2012-07-08 13:15:43.000000000 +0200
+@@ -19,6 +19,7 @@
+ EMUMACHINE = $(EMUOBJ)/machine
+ EMUIMAGEDEV = $(EMUOBJ)/imagedev
+ EMUVIDEO = $(EMUOBJ)/video
++EMUSWITCHRES = $(EMUOBJ)/switchres
+ 
+ OBJDIRS += \
+ 	$(EMUOBJ)/cpu \
+@@ -31,6 +32,7 @@
+ 	$(EMUOBJ)/layout \
+ 	$(EMUOBJ)/imagedev \
+ 	$(EMUOBJ)/video \
++	$(EMUOBJ)/switchres \
+ 
+ OSDSRC = $(SRC)/osd
+ OSDOBJ = $(OBJ)/osd
+@@ -318,9 +320,15 @@
+ 	$(EMUIMAGEDEV)/printer.o	\
+ 	$(EMUIMAGEDEV)/serial.o		\
+ 	$(EMUIMAGEDEV)/snapquik.o	\
++	
++EMUSWITCHRESOBJS = \
++	$(EMUSWITCHRES)/modeline.o \
++	$(EMUSWITCHRES)/monitor.o \
++	$(EMUSWITCHRES)/util.o \
++	$(EMUSWITCHRES)/switchres.o \
+ 
+ 
+-LIBEMUOBJS = $(EMUOBJS) $(EMUSOUNDOBJS) $(EMUAUDIOOBJS) $(EMUDRIVEROBJS) $(EMUMACHINEOBJS) $(EMUIMAGEDEVOBJS) $(EMUVIDEOOBJS)
++LIBEMUOBJS = $(EMUOBJS) $(EMUSOUNDOBJS) $(EMUAUDIOOBJS) $(EMUDRIVEROBJS) $(EMUMACHINEOBJS) $(EMUIMAGEDEVOBJS) $(EMUVIDEOOBJS) $(EMUSWITCHRESOBJS)
+ 
+ $(LIBEMU): $(LIBEMUOBJS)
+ 
+diff -Nru src/emu/emuopts.c src/emu/emuopts.c
+--- src/emu/emuopts.c	2012-07-08 13:13:00.000000000 +0200
++++ src/emu/emuopts.c	2012-07-08 13:15:43.000000000 +0200
+@@ -107,6 +107,7 @@
+ 	{ OPTION_FRAMESKIP ";fs(0-10)",                      "0",         OPTION_INTEGER,    "set frameskip to fixed value, 0-10 (autoframeskip must be disabled)" },
+ 	{ OPTION_SECONDS_TO_RUN ";str",                      "0",         OPTION_INTEGER,    "number of emulated seconds to run before automatically exiting" },
+ 	{ OPTION_THROTTLE,                                   "1",         OPTION_BOOLEAN,    "enable throttling to keep game running in sync with real time" },
++	{ OPTION_SYNCREFRESH ";srf",                         "1",         OPTION_BOOLEAN,    "enable using the start of VBLANK for throttling instead of the game time" },
+ 	{ OPTION_SLEEP,                                      "1",         OPTION_BOOLEAN,    "enable sleeping, which gives time back to other applications when idle" },
+ 	{ OPTION_SPEED "(0.01-100)",                         "1.0",       OPTION_FLOAT,      "controls the speed of gameplay, relative to realtime; smaller numbers are slower" },
+ 	{ OPTION_REFRESHSPEED ";rs",                         "0",         OPTION_BOOLEAN,    "automatically adjusts the speed of gameplay to keep the refresh rate lower than the screen" },
+@@ -123,12 +124,12 @@
+ 
+ 	// artwork options
+ 	{ NULL,                                              NULL,        OPTION_HEADER,     "CORE ARTWORK OPTIONS" },
+-	{ OPTION_ARTWORK_CROP ";artcrop",                    "0",         OPTION_BOOLEAN,    "crop artwork to game screen size" },
+-	{ OPTION_USE_BACKDROPS ";backdrop",                  "1",         OPTION_BOOLEAN,    "enable backdrops if artwork is enabled and available" },
+-	{ OPTION_USE_OVERLAYS ";overlay",                    "1",         OPTION_BOOLEAN,    "enable overlays if artwork is enabled and available" },
+-	{ OPTION_USE_BEZELS ";bezel",                        "1",         OPTION_BOOLEAN,    "enable bezels if artwork is enabled and available" },
+-	{ OPTION_USE_CPANELS ";cpanel",                      "1",         OPTION_BOOLEAN,    "enable cpanels if artwork is enabled and available" },
+-	{ OPTION_USE_MARQUEES ";marquee",                    "1",         OPTION_BOOLEAN,    "enable marquees if artwork is enabled and available" },
++	{ OPTION_ARTWORK_CROP ";artcrop",                    "1",         OPTION_BOOLEAN,    "crop artwork to game screen size" },
++	{ OPTION_USE_BACKDROPS ";backdrop",                  "0",         OPTION_BOOLEAN,    "enable backdrops if artwork is enabled and available" },
++	{ OPTION_USE_OVERLAYS ";overlay",                    "0",         OPTION_BOOLEAN,    "enable overlays if artwork is enabled and available" },
++	{ OPTION_USE_BEZELS ";bezel",                        "0",         OPTION_BOOLEAN,    "enable bezels if artwork is enabled and available" },
++	{ OPTION_USE_CPANELS ";cpanel",                      "0",         OPTION_BOOLEAN,    "enable cpanels if artwork is enabled and available" },
++	{ OPTION_USE_MARQUEES ";marquee",                    "0",         OPTION_BOOLEAN,    "enable marquees if artwork is enabled and available" },
+ 
+ 	// screen options
+ 	{ NULL,                                              NULL,        OPTION_HEADER,     "CORE SCREEN OPTIONS" },
+@@ -198,11 +199,37 @@
+ 	{ OPTION_RAMSIZE ";ram",                             NULL,        OPTION_STRING,     "size of RAM (if supported by driver)" },
+ 	{ OPTION_CONFIRM_QUIT,                               "0",         OPTION_BOOLEAN,    "display confirm quit screen on exit" },
+ 	// MKChamp Hiscore Diff options 
+-  { NULL,                        											 NULL,        OPTION_HEADER,     "CORE MKChamp OPTIONS" },
+-  { OPTION_DISABLE_HISCORE_PATCH, 										 "0",         OPTION_BOOLEAN,    "disable hiscore saving" },
+-  { OPTION_DISABLE_NAGSCREEN_PATCH,  									 "0",         OPTION_BOOLEAN,    "disable suppression of nagscreens" },
+-  { OPTION_DISABLE_LOADING_PATCH,    									 "0",         OPTION_BOOLEAN,    "disable suppression of loading screens /white box" },
+-  { NULL }
++  { NULL,                                              NULL,        OPTION_HEADER,     "CORE MKChamp OPTIONS" },
++  { OPTION_DISABLE_HISCORE_PATCH,                      "0",         OPTION_BOOLEAN,    "disable hiscore saving" },
++  { OPTION_DISABLE_NAGSCREEN_PATCH,                    "1",         OPTION_BOOLEAN,    "disable suppression of nagscreens" },
++  { OPTION_DISABLE_LOADING_PATCH,                      "1",         OPTION_BOOLEAN,    "disable suppression of loading screens /white box" },
++    
++  // Switchres options
++	{ NULL,                                              NULL,        OPTION_HEADER,     "CORE SWITCHRES OPTIONS" },
++	{ OPTION_MODELINE ";ml",                             "1",         OPTION_BOOLEAN,    "generate modelines for arcade monitors (only ATI Radeon support in Windows)" },
++	{ OPTION_MONITOR ";m",                               "cga",       OPTION_STRING,     "monitor type (cga|generic|h9110|vga|d9200|d9800|m2929|m3192|ntsc|pal)" },
++	{ OPTION_MONITOR_CONNECTOR ";mc",                    "auto",      OPTION_STRING,     "Linux video card output (VGA-0|VGA-1|DVI-0|DVI-1)" },
++	{ OPTION_MONITOR_ORIENTATION ";mo",                  "horizontal",OPTION_STRING,     "monitor orientation (horizontal|vertical|rotate)" },
++	{ OPTION_MONITOR_ASPECT ";ma",                       "4:3",       OPTION_STRING,     "monitor aspect (4:3|3:3|3:4|16:9)" },
++	{ OPTION_MONITOR_DEBUG ";md",                        "0",         OPTION_STRING,     "monitor debugging" },
++	{ OPTION_MONITOR_DOUBLESCAN ";ds",                   "1",         OPTION_BOOLEAN,    "Use doublescan if necessary, not available in Windows" },
++	{ OPTION_MONITOR_DOTCLOCK ";dc",                     "0",         OPTION_STRING,     "Lowest dotclock videocard accepts, 0 is the default" },
++	{ OPTION_MONITOR_YMIN ";ym",                         "0",         OPTION_STRING,     "Minimum height to calculate, default is no minimum" },
++	{ OPTION_CLEANSTRETCH ";cs",                         "0",         OPTION_BOOLEAN,    "cleanstretch integer only scaling" },
++	{ OPTION_CHANGERES ";cr",                            "1",         OPTION_BOOLEAN,    "change resolutions (work in progress)" },
++	{ OPTION_REDRAW ";rd",                               "0",         OPTION_STRING,     "multiply amount to draw game screen, make 30HZ games run at 60HZ when set to 2" },
++	{ OPTION_MONITOR_SPECS0 ";ms0",                      "auto",      OPTION_STRING,     "Add custom monitor specs, format: 15250.00-15700.00,49.50-65.00,2.000,4.700,8.000,0.064,0.192,1.024,0,0,288.0,448" },
++	{ OPTION_MONITOR_SPECS1 ";ms1",                      "auto",      OPTION_STRING,     "Add custom monitor specs" },
++	{ OPTION_MONITOR_SPECS2 ";ms2",                      "auto",      OPTION_STRING,     "Add custom monitor specs" },
++	{ OPTION_MONITOR_SPECS3 ";ms3",                      "auto",      OPTION_STRING,     "Add custom monitor specs" },
++	{ OPTION_MONITOR_SPECS4 ";ms4",                      "auto",      OPTION_STRING,     "Add custom monitor specs" },
++	{ OPTION_MONITOR_SPECS5 ";ms5",                      "auto",      OPTION_STRING,     "Add custom monitor specs" },
++	{ OPTION_MONITOR_SPECS6 ";ms6",                      "auto",      OPTION_STRING,     "Add custom monitor specs" },
++	{ OPTION_MONITOR_SPECS7 ";ms7",                      "auto",      OPTION_STRING,     "Add custom monitor specs" },
++	{ OPTION_MAGIC_RESOLUTION ";mr",                     "auto",      OPTION_STRING,     "Use this resolution to generate all the others" },
++	{ OPTION_POWERSTRIP ";ps",                           "0",         OPTION_BOOLEAN,    "Use Powerstrip API to set refresh rate (experimental)" },
++  	{ NULL }
++
+ };
+ 
+ 
+diff -Nru src/emu/emuopts.h src/emu/emuopts.h
+--- src/emu/emuopts.h	2012-07-08 13:13:00.000000000 +0200
++++ src/emu/emuopts.h	2012-07-08 13:15:43.000000000 +0200
+@@ -66,6 +66,7 @@
+ 	OPTION_PRIORITY_PARENT_INI,
+ 	OPTION_PRIORITY_DRIVER_INI
+ };
++#define OPTION_PRIORITY_SWITCHRES	OPTION_PRIORITY_CMDLINE -1
+ 
+ // core options
+ #define OPTION_SYSTEMNAME			core_options::unadorned(0)
+@@ -116,6 +117,7 @@
+ #define OPTION_FRAMESKIP			"frameskip"
+ #define OPTION_SECONDS_TO_RUN		"seconds_to_run"
+ #define OPTION_THROTTLE				"throttle"
++#define OPTION_SYNCREFRESH			"syncrefresh"
+ #define OPTION_SLEEP				"sleep"
+ #define OPTION_SPEED				"speed"
+ #define OPTION_REFRESHSPEED			"refreshspeed"
+@@ -204,6 +206,30 @@
+ #define OPTION_DISABLE_NAGSCREEN_PATCH		"disable_nagscreen_patch"
+ #define OPTION_DISABLE_LOADING_PATCH		"disable_loading_patch"
+ 
++/* Switchres Options */
++#define OPTION_MODELINE                        "modeline"
++#define OPTION_MONITOR                         "monitor"
++#define OPTION_MONITOR_CONNECTOR               "monitor_connector"
++#define OPTION_MONITOR_ORIENTATION             "monitor_orientation"
++#define OPTION_MONITOR_ASPECT                  "monitor_aspect"
++#define OPTION_MONITOR_DEBUG                   "monitor_debug"
++#define OPTION_MONITOR_DOUBLESCAN              "monitor_doublescan"
++#define OPTION_MONITOR_DOTCLOCK                "monitor_dotclock"
++#define OPTION_MONITOR_YMIN                    "monitor_ymin"
++#define OPTION_CLEANSTRETCH                    "cleanstretch"
++#define OPTION_CHANGERES                       "changeres"
++#define OPTION_REDRAW                          "redraw"
++#define OPTION_MONITOR_SPECS0                  "monitor_specs0"
++#define OPTION_MONITOR_SPECS1                  "monitor_specs1"
++#define OPTION_MONITOR_SPECS2                  "monitor_specs2"
++#define OPTION_MONITOR_SPECS3                  "monitor_specs3"
++#define OPTION_MONITOR_SPECS4                  "monitor_specs4"
++#define OPTION_MONITOR_SPECS5                  "monitor_specs5"
++#define OPTION_MONITOR_SPECS6                  "monitor_specs6"
++#define OPTION_MONITOR_SPECS7                  "monitor_specs7"
++#define OPTION_MAGIC_RESOLUTION                "magic_resolution"
++#define OPTION_POWERSTRIP                      "powerstrip"		
++
+ 
+ //**************************************************************************
+ //  TYPE DEFINITIONS
+@@ -278,6 +304,7 @@
+ 	int frameskip() const { return int_value(OPTION_FRAMESKIP); }
+ 	int seconds_to_run() const { return int_value(OPTION_SECONDS_TO_RUN); }
+ 	bool throttle() const { return bool_value(OPTION_THROTTLE); }
++	bool sync_refresh() const { return bool_value(OPTION_SYNCREFRESH); }
+ 	bool sleep() const { return bool_value(OPTION_SLEEP); }
+ 	float speed() const { return float_value(OPTION_SPEED); }
+ 	bool refresh_speed() const { return bool_value(OPTION_REFRESHSPEED); }
+@@ -363,6 +390,30 @@
+ 	bool disable_loading_patch() const { return bool_value(OPTION_DISABLE_LOADING_PATCH); }
+ 
+ 	bool confirm_quit() const { return bool_value(OPTION_CONFIRM_QUIT); }
++	
++	// Switchres options
++	bool modeline() const { return bool_value(OPTION_MODELINE); };
++	const char *monitor() const { return value(OPTION_MONITOR); };
++	const char *monitor_connector() const { return value(OPTION_MONITOR_CONNECTOR); };
++	const char *monitor_orientation() const { return value(OPTION_MONITOR_ORIENTATION); };
++	const char *monitor_aspect() const { return value(OPTION_MONITOR_ASPECT); };
++	const char *monitor_debug() const { return value(OPTION_MONITOR_DEBUG); };
++	bool monitor_doublescan() const { return bool_value(OPTION_MONITOR_DOUBLESCAN); };
++	const char *monitor_dotclock() const { return value(OPTION_MONITOR_DOTCLOCK); };
++	const char *monitor_ymin() const { return value(OPTION_MONITOR_YMIN); };
++	bool cleanstretch() const { return bool_value(OPTION_CLEANSTRETCH); };
++	bool changeres() const { return bool_value(OPTION_CHANGERES); };
++	const char *redraw() const { return value(OPTION_REDRAW); };
++	const char *monitor_specs0() const { return value(OPTION_MONITOR_SPECS0); };
++	const char *monitor_specs1() const { return value(OPTION_MONITOR_SPECS1); };
++	const char *monitor_specs2() const { return value(OPTION_MONITOR_SPECS2); };
++	const char *monitor_specs3() const { return value(OPTION_MONITOR_SPECS3); };
++	const char *monitor_specs4() const { return value(OPTION_MONITOR_SPECS4); };
++	const char *monitor_specs5() const { return value(OPTION_MONITOR_SPECS5); };
++	const char *monitor_specs6() const { return value(OPTION_MONITOR_SPECS6); };
++	const char *monitor_specs7() const { return value(OPTION_MONITOR_SPECS7); };
++	const char *magic_resolution() const { return value(OPTION_MAGIC_RESOLUTION); };
++	bool powerstrip() const { return bool_value(OPTION_POWERSTRIP); };
+ 
+ 	// device-specific options
+ 	const char *device_option(device_image_interface &image);
+diff -Nru src/emu/hiscore.c src/emu/hiscore.c
+--- src/emu/hiscore.c	2012-07-08 13:13:00.000000000 +0200
++++ src/emu/hiscore.c	2012-07-08 13:15:43.000000000 +0200
+@@ -379,7 +379,7 @@
+ 	}
+ 
+ 	state.mem_range = NULL;
+-	emu_file f(OPEN_FLAG_READ);
++	emu_file f(machine.options().hiscore_directory(), OPEN_FLAG_READ);
+   filerr = f.open(db_filename, ".dat");
+ 	if(filerr == FILERR_NONE)
+ 	{
+diff -Nru src/emu/machine.c src/emu/machine.c
+--- src/emu/machine.c	2012-07-08 13:13:00.000000000 +0200
++++ src/emu/machine.c	2012-07-08 13:15:43.000000000 +0200
+@@ -183,6 +183,7 @@
+ {
+ 	memset(gfx, 0, sizeof(gfx));
+ 	memset(&m_base_time, 0, sizeof(m_base_time));
++	memset(&switchRes, 0, sizeof(switchRes));
+ 
+ 	// set the machine on all devices
+ 	device_iterator iter(root_device());
+@@ -256,6 +257,9 @@
+ 	// allocate a soft_reset timer
+ 	m_soft_reset_timer = m_scheduler.timer_alloc(timer_expired_delegate(FUNC(running_machine::soft_reset), this));
+ 
++	// Switchres
++	SetMameOptions(*this);
++
+ 	// init the osd layer
+ 	m_osd.init(*this);
+ 
+diff -Nru src/emu/machine.h src/emu/machine.h
+--- src/emu/machine.h	2012-07-08 13:13:00.000000000 +0200
++++ src/emu/machine.h	2012-07-08 13:15:43.000000000 +0200
+@@ -304,6 +304,9 @@
+ 	// debugger-related information
+ 	UINT32					debug_flags;		// the current debug flags
+ 
++	// SwitchRes patch
++	SwitchRes				switchRes;			// SwitchRes data
++
+ 	// internal core information
+ 	palette_private *		palette_data;		// internal data from palette.c
+ 	romload_private *		romload_data;		// internal data from romload.c
+diff -Nru src/emu/render.c src/emu/render.c
+--- src/emu/render.c	2012-05-07 08:04:18.000000000 +0200
++++ src/emu/render.c	2012-07-08 13:15:43.000000000 +0200
+@@ -1204,10 +1204,54 @@
+ void render_target::compute_visible_area(INT32 target_width, INT32 target_height, float target_pixel_aspect, int target_orientation, INT32 &visible_width, INT32 &visible_height)
+ {
+ 	float width, height;
+-	float scale;
++	float xscale, yscale;
++	INT32 iwidth, iheight;
++	
++	compute_minimum_size( iwidth, iheight);
++	
++	// Check for resolution changes
++	if (m_manager.machine().switchRes.resolution.width != 0) {
++		if (m_manager.machine().switchRes.resolution.width != iwidth ||
++		  m_manager.machine().switchRes.resolution.height != iheight)
++		{
++			mame_printf_verbose("SwitchRes: [%d] Resolution change from %dx%d to %dx%d\n",
++				m_manager.machine().switchRes.cs.changeres,
++				m_manager.machine().switchRes.resolution.width,
++				m_manager.machine().switchRes.resolution.height,
++				iwidth, iheight);
++
++			m_manager.machine().switchRes.resolution.width = iwidth;
++			m_manager.machine().switchRes.resolution.height = iheight;
++
++			m_manager.machine().switchRes.resolution.changeres = 1;
++		}
++	} else {
++		m_manager.machine().switchRes.resolution.width = iwidth;
++		m_manager.machine().switchRes.resolution.height = iheight;
++	}
++
++	if (m_manager.machine().switchRes.cs.cleanstretch) {
++	
++		width = iwidth;
++		height = iheight;
++
++		xscale = (int)target_width % (int)width;
++		yscale = (int)target_height % (int)height;
++
++		target_width -= xscale;
++		target_height -= yscale;
++
++		xscale = (int)target_width / (int)width;
++		yscale = (int)target_height / (int)height;
++
++		if (xscale > yscale)
++			xscale = yscale;
++		if (yscale > xscale)
++			yscale = xscale;
++	}
+ 
+ 	// constrained case
+-	if (target_pixel_aspect != 0.0f)
++	else if (target_pixel_aspect != 0.0f)
+ 	{
+ 		// start with the aspect ratio of the square pixel layout
+ 		width = m_curview->effective_aspect(m_layerconfig);
+@@ -1222,9 +1266,9 @@
+ 
+ 		// based on the height/width ratio of the source and target, compute the scale factor
+ 		if (width / height > (float)target_width / (float)target_height)
+-			scale = (float)target_width / width;
++			xscale = yscale = (float)target_width / width;
+ 		else
+-			scale = (float)target_height / height;
++			xscale = yscale = (float)target_height / height;
+ 	}
+ 
+ 	// stretch-to-fit case
+@@ -1232,12 +1276,12 @@
+ 	{
+ 		width = (float)target_width;
+ 		height = (float)target_height;
+-		scale = 1.0f;
++		xscale = yscale = 1.0f;
+ 	}
+ 
+ 	// set the final width/height
+-	visible_width = render_round_nearest(width * scale);
+-	visible_height = render_round_nearest(height * scale);
++	visible_width = render_round_nearest(width * xscale);
++	visible_height = render_round_nearest(height * yscale);
+ }
+ 
+ 
+diff -Nru src/emu/switchres/modeline.c src/emu/switchres/modeline.c
+--- src/emu/switchres/modeline.c	1970-01-01 01:00:00.000000000 +0100
++++ src/emu/switchres/modeline.c	2012-07-08 13:15:43.000000000 +0200
+@@ -0,0 +1,504 @@
++/*
++ *
++ *   SwitchRes (C) 2010 Chris Kennedy <c@groovy.org>
++ * 
++ *   SwitchRes is a modeline generator based off of Calamity's 
++ *   Methods of generating modelines
++ *
++ */
++
++#include "emu.h"
++#include "emuopts.h"
++#include <stdio.h>
++#include <stdlib.h>
++#include <math.h>
++#include <errno.h>
++#include <sys/stat.h>
++#include <string.h>
++
++int ModelineCreate(ConfigSettings *cs, GameInfo *game, MonitorMode *monitor, ModeLine *mode) {
++	double margin = 0;
++	double interlace = 1;
++	double VBlankLines = 0;
++
++	/* Clear modeline */
++	memset(mode, 0, sizeof(ModeLine));
++
++	/* Hfreq range */
++	sprintf(mode->label, 
++		"%.3fKhz -> %.3fKhz", 
++		((double)monitor->HfreqMin/1000), ((double)monitor->HfreqMax/1000));
++
++	/* Get games basic resolution */
++	mode->hactive = game->width;
++	mode->vactive = game->height;
++
++	mode->vfreq   = game->refresh;
++	mode->result  = 0;
++
++	/* Vertical blanking */
++	monitor->VerticalBlank = round((monitor->VfrontPorch * 1000) +
++					(monitor->VsyncPulse * 1000) +
++					(monitor->VbackPorch * 1000))/1000000;
++
++	/* Vertical Refresh */
++	if (mode->vfreq < monitor->VfreqMin) {
++		if ((2 * mode->vfreq) <= monitor->VfreqMax)
++			mode->vfreq *= 2;
++		else
++			mode->vfreq = monitor->VfreqMin;
++		if (cs->verbose > 2)
++			mame_printf_verbose("SwitchRes: Increased vertical frequency to %.3f\n", 
++				mode->vfreq);
++	} else if (mode->vfreq > monitor->VfreqMax) {
++		mode->vfreq = monitor->VfreqMax;
++		if (cs->verbose > 2)
++			mame_printf_verbose("SwitchRes: Decreased vertical frequency to %.3f\n", 
++				mode->vfreq);
++	}
++
++	/* Height limits */
++	// First we calculate the minimum and maximum height for this vfreq without doublescan nor padding
++	monitor->YresMin = (monitor->HfreqMin / mode->vfreq) - round(monitor->HfreqMin * monitor->VerticalBlank);
++	monitor->YresMax = (monitor->HfreqMax / mode->vfreq) - round(monitor->HfreqMax * monitor->VerticalBlank);
++	if (cs->interlace)
++		monitor->YresMax *= 2;
++	if (cs->verbose > 3)
++		mame_printf_verbose("SwitchRes: Raw limits (%2.4fHz)-> YresMin= %dp, YresMax= %dp(%di)\n",
++			mode->vfreq, monitor->YresMin, monitor->YresMax/2, monitor->YresMax);
++	
++	// Then we calculate the minimum logical height based on VirtualLineLimits/2, considering padding
++	if (monitor->VirtualLinesLimit){
++		monitor->YresMin = monitor->VirtualLinesLimit / 2;
++		if (cs->verbose > 3)
++			mame_printf_verbose("SwitchRes: Logical limit YresMin (%d/2) = %dp\n", 
++				monitor->VirtualLinesLimit, monitor->YresMin);
++	}
++	// Finally, we get user's minimum height without doublescan if ymin option is defined
++	if (cs->ymin > 0 && monitor->YresMin < cs->ymin && cs->ymin < monitor->YresMax){
++		monitor->YresMin = cs->ymin;
++		if (cs->verbose > 3)
++			mame_printf_verbose("SwitchRes: User input for minimum vertical size %d\n", 
++				monitor->YresMin);
++	}
++
++	/* Width Limits */
++	monitor->XresMin = 184;
++	if (mode->hactive < monitor->XresMin) {
++		mode->hactive = monitor->XresMin;
++		mode->result |= RESULT_RES_INC;
++		if (cs->verbose > 2)
++			mame_printf_verbose("SwitchRes: Increased horizontal size to %d\n", mode->hactive);
++	}
++
++	if (cs->verbose > 3)
++		mame_printf_verbose("SwitchRes: Setup monitor limits min=%dx%d max=%dx%d\n",
++			monitor->XresMin, monitor->YresMin, 0, monitor->YresMax);
++
++	/* check vertical resolution and scale if necessary */
++	if (mode->vactive < monitor->YresMin) {
++		int xres = mode->hactive;
++		int yres = mode->vactive;
++		int scale = 1;
++		if (cs->doublescan) {
++			interlace = 0.5;
++			mode->doublescan = 1;
++			mode->result |= RESULT_DOUBLESCAN;
++		} else while ((mode->vactive < monitor->YresMin) && ((mode->vactive) + yres <= monitor->YresMax)){
++				scale ++;
++				mode->hactive += xres;
++				mode->vactive += yres;
++				mode->result |= RESULT_DOUBLERES;
++		}
++		if (scale > 1) mame_printf_verbose("SwitchRes: Resolution scaled x%d to meet monitor specs\n", scale);
++	}
++
++	/* check vertical active lines */
++	if (mode->vactive > monitor->ActiveLinesLimit) {
++		if (cs->interlace && mode->vactive <= monitor->VirtualLinesLimit) {
++			interlace = 2;
++			mode->interlace = 1;
++			ResVirtualize(mode, monitor);
++			mode->result |= RESULT_INTERLACE | RESULT_VIRTUALIZE;
++		} else {
++			if (cs->interlace) {
++				interlace = 2;
++				mode->interlace = 1;
++				mode->result |= RESULT_INTERLACE;
++				if (cs->verbose > 2)
++					mame_printf_verbose("SwitchRes: Using interlace\n");
++			} else {
++				mode->vactive = monitor->ActiveLinesLimit;
++				ResVirtualize(mode, monitor);
++				mode->result |= RESULT_VIRTUALIZE;
++			}
++		}
++	}
++
++	/* Horizontal frequency */
++	mode->hfreq = mode->vfreq * mode->vactive / 
++			(interlace * (1.0 - mode->vfreq * monitor->VerticalBlank));
++
++	if (cs->verbose > 2)
++		mame_printf_verbose("SwitchRes: Starting with Horizontal freq of %.3f and Vertical refresh of %.2f\n",
++			mode->hfreq/1000, mode->vfreq);
++
++	/* Minimum horizontal frequency */
++	if (mode->hfreq < monitor->HfreqMin) {
++		if (cs->verbose > 2)
++			mame_printf_verbose("SwitchRes: Increased horizontal frequency from %.3f to %.3f\n", 
++				mode->hfreq/1000, monitor->HfreqMin/1000);
++		mode->hfreq = monitor->HfreqMin;
++		mode->result |= RESULT_HFREQ_CHANGE;
++	} else if (mode->hfreq > monitor->HfreqMax) {
++		if (cs->verbose > 2)
++			mame_printf_verbose("SwitchRes: Horizontal frequency too high %.3f vfreq %.3f\n", 
++				mode->hfreq/1000, mode->vfreq);
++		if (mode->vactive > monitor->ActiveLinesLimit && cs->interlace)
++		{
++			interlace = 2;
++			mode->interlace = 1;
++			ResVirtualize(mode, monitor);
++			mode->result |= RESULT_INTERLACE | RESULT_VIRTUALIZE;
++		} else {
++			double old_vfreq = mode->vfreq;
++			if (cs->verbose > 2)
++				mame_printf_verbose("SwitchRes: Lowered horizontal frequency to  %.3f from %.3f\n", 
++					monitor->HfreqMax, mode->hfreq/1000);
++			mode->hfreq = monitor->HfreqMax;
++			VBlankLines = round(mode->hfreq * monitor->VerticalBlank);
++			mode->vfreq = mode->hfreq / (mode->vactive / interlace + VBlankLines);
++			mode->result |= RESULT_HFREQ_CHANGE;
++			if (cs->verbose > 2)
++				mame_printf_verbose("SwitchRes: Vertical frequency changed to %.3f from %.3f\n", 
++					mode->vfreq, old_vfreq);
++		}
++	}
++
++	/* Get total vertical lines */
++	mode->vtotal = round(mode->hfreq / mode->vfreq);
++	if (interlace == 2)
++		mode->vtotal += 0.5;
++	while ((mode->vfreq * mode->vtotal) < monitor->HfreqMin && (mode->vfreq * (mode->vtotal+1.0)) < monitor->HfreqMax) {
++		if (cs->verbose > 2) 
++			mame_printf_verbose("SwitchRes: Increasing 1 line from horizontal freq %.3f to %.3f\n",
++				(mode->vfreq * mode->vtotal), (mode->vfreq * (mode->vtotal+1)));
++		mode->vtotal = mode->vtotal + 1.0;
++	}
++
++	while (((mode->vfreq+0.001) * mode->vtotal) < monitor->HfreqMin) 
++		mode->vfreq += 0.001;
++
++	if (cs->dcalign) {
++		int i;
++		int newPclock = 0;
++		int vIncr = 0;
++		double newDiff = 0, Diff = 0;
++		ModeLine newMode;
++		memcpy(&newMode, mode, sizeof(struct ModeLine));
++		if (cs->verbose > 3)
++			mame_printf_verbose("SwitchRes: Vfreq = %f Game Refresh = %f\n", mode->vfreq, game->refresh);
++		for (i = 0; i < 5; i++) {
++			/* calculate new horizontal frequency */
++			mode->hfreq = mode->vfreq * (mode->vtotal + i);
++			if (mode->hfreq <= monitor->HfreqMax) {
++				/* Fill horizontal part of modeline */
++				newMode.hfreq = mode->hfreq;
++				newMode.hactive = mode->hactive;
++				ModelineGetLineParams(&newMode, monitor);
++				newMode.pclock = mode->hfreq * newMode.htotal;
++				if (fabs(Normalize(newMode.pclock - cs->dcalign, cs->dcalign)-newMode.pclock) < fabs(Normalize(newMode.pclock, cs->dcalign)-newMode.pclock))
++					newMode.pclock = Normalize(newMode.pclock, cs->dcalign) - cs->dcalign;
++				else	
++					newMode.pclock = Normalize(newMode.pclock, cs->dcalign);
++				newMode.vfreq = newMode.pclock / ((mode->vtotal + i) * newMode.htotal);
++				newDiff = fabs(newMode.vfreq - mode->vfreq);
++				if (newDiff < Diff || Diff == 0) {
++					if (cs->verbose > 3)
++						mame_printf_verbose("SwitchRes: [%d] Pclock: %d newVfreq: %f - Vfreq: %f newDiff = %f < Diff = %f\n", 
++							i, newMode.pclock, newMode.vfreq, mode->vfreq, newDiff, Diff);
++					Diff = newDiff;
++					vIncr = i;
++					newPclock = newMode.pclock;	
++					mode->hactive = newMode.hactive;
++					mode->hbegin = newMode.hbegin;
++					mode->hend = newMode.hend;
++					mode->htotal = newMode.htotal;
++					if (newDiff < 0.01)
++						break;
++				}
++			}
++		}
++		if (newPclock) {
++			mode->vtotal += vIncr;
++			mode->pclock = newPclock;
++		} else {
++			mode->hfreq = mode->vfreq * mode->vtotal;
++			ModelineGetLineParams(mode, monitor);
++			mode->pclock = mode->htotal * mode->hfreq;
++		}
++	} else {
++		/* calculate new horizontal frequency */
++		mode->hfreq = mode->vfreq * mode->vtotal;
++
++		/* Fill horizontal part of modeline */
++		ModelineGetLineParams(mode, monitor);
++
++		/* recalculate dotclock */
++		mode->pclock = mode->htotal * mode->hfreq;
++	}
++	mode->vfreq = mode->pclock / (mode->vtotal * mode->htotal);
++	mode->hfreq = mode->vfreq * mode->vtotal;
++
++	/* Check for vertical refresh rate match to original */
++	if (mode->vfreq < (game->refresh - 0.10) ||
++		mode->vfreq > (game->refresh + 0.10)) 
++	{
++		if (cs->verbose > 2)
++			mame_printf_verbose("SwitchRes: Original Vref %f != %f\n", 
++				game->refresh, mode->vfreq);
++		if (round(game->refresh*2) != round(mode->vfreq))
++			mode->result |= RESULT_VFREQ_CHANGE;
++		if (round(game->refresh*2) == round(mode->vfreq))
++			mode->result |= RESULT_VFREQ_DOUBLE;
++	}
++
++	sprintf(mode->name, "%dx%dx%.2f", mode->hactive, mode->vactive, mode->vfreq);
++
++	/* Vertical blanking */
++	VBlankLines = round(mode->hfreq * monitor->VerticalBlank);
++	if (interlace == 2)
++		VBlankLines += 0.5;
++	margin = (round(mode->vtotal * interlace) - 
++			mode->vactive - (VBlankLines * interlace)) / 2;
++	if (margin) {
++		mode->result |= RESULT_PADDING;
++		mode->vpad = (margin*2);
++		if (cs->verbose > 2) 
++			mame_printf_verbose("SwitchRes: Using %d lines padding\n", 
++				mode->vpad);
++	}
++
++	mode->vbegin = mode->vactive + round(((mode->hfreq/1000)*monitor->VfrontPorch) * 
++			interlace + margin);
++	mode->vend   = mode->vbegin + round(((mode->hfreq/1000)*monitor->VsyncPulse) *
++			interlace);
++
++	mode->vtotal = round(mode->vtotal * interlace);
++
++	mode->hfreq = mode->vfreq * (mode->vtotal/interlace);
++	if (!cs->dcalign)
++		mode->pclock = mode->htotal * mode->hfreq;
++
++	if (monitor->HsyncPolarity)
++		mode->hsync = 1;
++
++	if (monitor->VsyncPolarity)
++		mode->vsync = 1;
++
++	mode->a_width = mode->hactive;
++	mode->a_height = mode->vactive;
++
++	return 0;
++}
++
++int ModelineGetLineParams(ModeLine *mode, MonitorMode *monitor) {
++	int hhh, hhi, hhf, hht;
++	int hh, hs, he, ht;
++	double LineTime, CharTime, NewCharTime;
++	double HfrontPorchMin, HsyncPulseMin, HbackPorchMin;
++
++	HfrontPorchMin = monitor->HfrontPorch - .20;
++	HsyncPulseMin  = monitor->HsyncPulse  - .20;
++	HbackPorchMin  = monitor->HbackPorch  - .20;
++
++	LineTime = 1 / mode->hfreq * 1000000;
++	
++	hh = round(mode->hactive / 8);
++	hs = 1;
++	he = 1;
++	ht = 1;
++
++	do {
++		CharTime = LineTime / (hh + hs + he + ht);
++		if (hs * CharTime < HfrontPorchMin ||
++		    abs((hs + 1) * CharTime - monitor->HfrontPorch) < 
++		     abs(hs * CharTime - monitor->HfrontPorch)) 
++		{
++			hs++;
++		}
++		if (he * CharTime < HsyncPulseMin ||
++		    abs((he + 1) * CharTime - monitor->HsyncPulse) < 
++		     abs(he * CharTime - monitor->HsyncPulse)) 
++		{
++			he++;
++		}
++		if (ht * CharTime < HbackPorchMin ||
++		    abs((ht + 1) * CharTime - monitor->HbackPorch) < 
++		     abs(ht * CharTime - monitor->HbackPorch)) 
++		{
++			ht++;
++		}
++		NewCharTime = LineTime / (hh + hs + he + ht);
++	} while (NewCharTime != CharTime);
++
++	hhh = hh * 8;
++	hhi = (hh + hs) * 8;
++	hhf = (hh + hs + he) * 8;
++	hht = (hh + hs + he + ht) * 8;
++
++	mode->hactive = hhh;
++	mode->hbegin  = hhi;
++	mode->hend    = hhf;
++	mode->htotal  = hht;
++
++	return 0;
++}
++
++int ResVirtualize(ModeLine *mode, MonitorMode *monitor) {
++	double interlace = 1;
++	int xresNew, VBlankLines, ActiveLinesMax, ActiveLinesMin;
++	double vfreqlimit = 0;
++	int i;
++
++	if (mode->interlace)
++		interlace = 2;
++	else if (mode->doublescan)
++		interlace = 0.5;
++	
++	VBlankLines    = monitor->HfreqMax * monitor->VerticalBlank;
++	ActiveLinesMax = monitor->HfreqMax / monitor->VfreqMin - VBlankLines;
++	ActiveLinesMin = monitor->HfreqMin / monitor->VfreqMax - VBlankLines;
++
++	if (ActiveLinesMin > monitor->YresMin) 
++		ActiveLinesMin = monitor->YresMin;
++	if (ActiveLinesMax > monitor->YresMax) 
++		ActiveLinesMax = monitor->YresMax;
++
++	if (interlace == 1 && 
++	     mode->vactive > (ActiveLinesMin * interlace) && 
++	      mode->vactive < ActiveLinesMax)
++			ActiveLinesMax = mode->vactive;
++
++	for (i = (Normalize(ActiveLinesMax, 8) * interlace);
++		i >= (Normalize(ActiveLinesMin, 16) * interlace); i -= 16) 
++	{
++		mode->vactive = i;
++		VBlankLines = 
++			(monitor->HfreqMax - 50) * monitor->VerticalBlank;
++		vfreqlimit = 
++			(monitor->HfreqMax - 50) / 
++				(mode->vactive + VBlankLines * interlace) * 
++					interlace;
++		if (vfreqlimit >= mode->vfreq) 
++			goto ValidYres;
++	}
++
++	if (!vfreqlimit)
++		return 1;
++
++	mode->vfreq = vfreqlimit;
++
++	ValidYres:
++	xresNew = Normalize(((4.0/3.0) * mode->vactive), 8);
++	if (mode->hactive < xresNew || interlace < 2)
++		mode->hactive = xresNew;
++	mode->hfreq = (mode->vactive / interlace + VBlankLines) * mode->vfreq;
++ 
++	mame_printf_verbose("SwitchRes: Virtualized to %dx%d@%.2f %.4fKhz\n",
++		mode->hactive, mode->vactive, mode->vfreq,
++		mode->hfreq/1000);
++
++	return 0;
++}
++
++char * PrintModeline(ModeLine *mode, char *modeline) {
++	sprintf(modeline, "     \"%s\" %.6f %d %d %d %d %d %d %d %.0f %s %s%s%s",
++		mode->name, ((double)mode->pclock/1000000), 
++		mode->hactive, mode->hbegin, mode->hend, mode->htotal,
++		mode->vactive, mode->vbegin, mode->vend, mode->vtotal,
++		mode->hsync?"+HSync":"-HSync", mode->vsync?"+VSync":"-VSync",
++		mode->doublescan?" doublescan":"", mode->interlace?" interlace":"");
++
++	return modeline;
++}
++
++int ModelineResult(ModeLine *mode, ConfigSettings *cs) {
++	int weight = 0;
++
++	if (cs->verbose > 2) {
++		if (mode->result)
++			mame_printf_verbose("SwitchRes: # %s: (", mode->label);
++		else
++			mame_printf_verbose("SwitchRes: # %s: ( Perfect Resolution )\n", mode->label);
++	}
++	if (mode->result & RESULT_RES_INC) {
++		if (cs->verbose > 2)
++			mame_printf_verbose(" | Increased Size");
++		if (cs->vsync)
++			weight += 1;
++		else
++			weight += 5;
++	}
++	if (mode->result & RESULT_RES_DEC) {
++		if (cs->verbose > 2)
++			mame_printf_verbose(" | Reduced Size");
++		if (cs->vsync)
++			weight += 1;
++		else
++			weight += 5;
++	}
++	if (mode->result & RESULT_HFREQ_CHANGE) {
++		if (cs->verbose > 2)
++			mame_printf_verbose(" | Hfreq Change");
++		weight += 1;
++	}
++	if (mode->result & RESULT_VFREQ_DOUBLE) {
++		if (cs->verbose > 2)
++			mame_printf_verbose(" | Vref Change");
++	}
++	if (mode->result & RESULT_VFREQ_CHANGE) {
++		if (cs->verbose > 2)
++			mame_printf_verbose(" | Vref Change");
++		if (cs->vsync)
++			weight += 10;
++		else
++			weight += 1;
++	}
++	if (mode->result & RESULT_INTERLACE) {
++		if (cs->verbose > 2)
++			mame_printf_verbose(" | Interlace");
++		weight += 3;
++	}
++	if (mode->result & RESULT_DOUBLESCAN) {
++		if (cs->verbose > 2)
++			mame_printf_verbose(" | Doublescan");
++		weight += 3;
++	}
++	if (mode->result & RESULT_DOUBLERES) {
++		if (cs->verbose > 2)
++			mame_printf_verbose(" | Doubleres");
++		weight += 3;
++	}
++	if (mode->result & RESULT_LOWDOTCLOCK) {
++		if (cs->verbose > 2)
++			mame_printf_verbose(" | Lowdotclock");
++		weight += 3;
++	}
++	if (mode->result & RESULT_VIRTUALIZE) {
++		if (cs->verbose > 2)
++			mame_printf_verbose(" | Virtualize");
++		weight += 6;
++	}
++	if (mode->result & RESULT_PADDING) {
++		if (cs->verbose > 2)
++			mame_printf_verbose(" | Vpad +%d lines", mode->vpad);
++		weight += 1;
++		weight += round(mode->vpad/8);
++	}
++	if (cs->verbose > 2 && weight)
++		mame_printf_verbose(" | )\n");
++
++	return weight;
++}
++
+diff -Nru src/emu/switchres/monitor.c src/emu/switchres/monitor.c
+--- src/emu/switchres/monitor.c	1970-01-01 01:00:00.000000000 +0100
++++ src/emu/switchres/monitor.c	2012-07-08 13:15:43.000000000 +0200
+@@ -0,0 +1,364 @@
++/*
++ *
++ *   SwitchRes 2010 Chris Kennedy <c@groovy.org>
++ * 
++ *   SwitchRes is a modeline generator based off of Calamity's 
++ *   Methods of generating modelines
++ *
++ */
++
++#include "emu.h"
++#include "emuopts.h"
++#include <stdio.h>
++#include <string.h>
++
++int FillMonitorMode(const char *line, MonitorMode *monitor) {
++	int e = sscanf(line, "%lf-%lf,%lf-%lf,%lf,%lf,%lf,%lf,%lf,%lf,%d,%d,%lf,%d",
++		&monitor->HfreqMin, &monitor->HfreqMax, 
++		&monitor->VfreqMin, &monitor->VfreqMax,
++		&monitor->HfrontPorch, &monitor->HsyncPulse, &monitor->HbackPorch,
++		&monitor->VfrontPorch, &monitor->VsyncPulse, &monitor->VbackPorch,
++		&monitor->HsyncPolarity, &monitor->VsyncPolarity,
++		&monitor->ActiveLinesLimit, &monitor->VirtualLinesLimit);
++
++	if (e != 14) {
++		mame_printf_error("SwitchRes: Error trying to fill monitor mode with\n  %s\n",
++			line);
++		return -1;
++	}
++
++	return 0;
++}
++
++int ShowMonitorMode(MonitorMode *monitor) {
++	mame_printf_info("SwitchRes: MonitorLimits %.2f-%.2f,%.2f-%.2f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%d,%d,%.1f,%d\n",
++		monitor->HfreqMin, monitor->HfreqMax, 
++		monitor->VfreqMin, monitor->VfreqMax,
++		monitor->HfrontPorch, monitor->HsyncPulse, monitor->HbackPorch,
++		monitor->VfrontPorch, monitor->VsyncPulse, monitor->VbackPorch,
++		monitor->HsyncPolarity, monitor->VsyncPolarity,
++		monitor->ActiveLinesLimit, monitor->VirtualLinesLimit);
++
++	return 0;
++}
++
++int SetMonitorMode(char *type, MonitorMode monitor[MAX_MODES]) {
++	if (!strcmp(type, "m2929")) {
++		monitor[0].HfreqMin = 30000;
++		monitor[0].HfreqMax = 40000;
++		monitor[0].VfreqMin = 47;
++		monitor[0].VfreqMax = 90;
++		monitor[0].HfrontPorch = 0.636;
++		monitor[0].HsyncPulse  = 3.813;
++		monitor[0].HbackPorch  = 1.906;
++		monitor[0].VfrontPorch = 0.020;
++		monitor[0].VsyncPulse  = 0.106;
++		monitor[0].VbackPorch  = 0.607;
++		monitor[0].HsyncPolarity = 1;
++		monitor[0].VsyncPolarity = 1;
++		monitor[0].ActiveLinesLimit = 576;
++		monitor[0].VirtualLinesLimit = 768;
++		return 1;
++	} else if (!strcmp(type, "d9800") || !strcmp(type, "d9400")) {
++		/* CGA */
++		monitor[0].HfreqMin = 15250;
++		monitor[0].HfreqMax = 18000;
++		monitor[0].VfreqMin = 40;
++		monitor[0].VfreqMax = 80;
++		monitor[0].HfrontPorch = 2.187;
++		monitor[0].HsyncPulse  = 4.688;
++		monitor[0].HbackPorch  = 6.719;
++		monitor[0].VfrontPorch = 0.190;
++		monitor[0].VsyncPulse  = 0.191;
++		monitor[0].VbackPorch  = 1.018;
++		monitor[0].HsyncPolarity = 0;
++		monitor[0].VsyncPolarity = 0;
++		monitor[0].ActiveLinesLimit = 288;
++		monitor[0].VirtualLinesLimit = 448;
++		/* CGA-> EGA */
++		monitor[1].HfreqMin = 18001;
++		monitor[1].HfreqMax = 19000;
++		monitor[1].VfreqMin = 40;
++		monitor[1].VfreqMax = 80;
++		monitor[1].HfrontPorch = 2.187;
++		monitor[1].HsyncPulse  = 4.688;
++		monitor[1].HbackPorch  = 6.719;
++		monitor[1].VfrontPorch = 0.140;
++		monitor[1].VsyncPulse  = 0.191;
++		monitor[1].VbackPorch  = 0.950;
++		monitor[1].HsyncPolarity = 0;
++		monitor[1].VsyncPolarity = 0;
++		monitor[1].ActiveLinesLimit = 288;
++		monitor[1].VirtualLinesLimit = 448;
++		/* EGA */
++		monitor[2].HfreqMin = 20501;
++		monitor[2].HfreqMax = 29000;
++		monitor[2].VfreqMin = 40;
++		monitor[2].VfreqMax = 80;
++		monitor[2].HfrontPorch = 2.910;
++		monitor[2].HsyncPulse  = 3.000;
++		monitor[2].HbackPorch  = 4.440;
++		monitor[2].VfrontPorch = 0.451;
++		monitor[2].VsyncPulse  = 0.164;
++		monitor[2].VbackPorch  = 1.048;
++		monitor[2].HsyncPolarity = 0;
++		monitor[2].VsyncPolarity = 0;
++		monitor[2].ActiveLinesLimit = 480;
++		monitor[2].VirtualLinesLimit = 768;
++		/* VGA */
++		monitor[3].HfreqMin = 29001;
++		monitor[3].HfreqMax = 32000;
++		monitor[3].VfreqMin = 40;
++		monitor[3].VfreqMax = 80;
++		monitor[3].HfrontPorch = 0.636;
++		monitor[3].HsyncPulse  = 3.813;
++		monitor[3].HbackPorch  = 1.906;
++		monitor[3].VfrontPorch = 0.318;
++		monitor[3].VsyncPulse  = 0.064;
++		monitor[3].VbackPorch  = 1.048;
++		monitor[3].HsyncPolarity = 0;
++		monitor[3].VsyncPolarity = 0;
++		monitor[3].ActiveLinesLimit = 576;
++		monitor[3].VirtualLinesLimit = 768;
++		/* VGA->SVGA */
++		monitor[4].HfreqMin = 32001;
++		monitor[4].HfreqMax = 34000;
++		monitor[4].VfreqMin = 40;
++		monitor[4].VfreqMax = 80;
++		monitor[4].HfrontPorch = 0.636;
++		monitor[4].HsyncPulse  = 3.813;
++		monitor[4].HbackPorch  = 1.906;
++		monitor[4].VfrontPorch = 0.020;
++		monitor[4].VsyncPulse  = 0.106;
++		monitor[4].VbackPorch  = 0.607;
++		monitor[4].HsyncPolarity = 0;
++		monitor[4].VsyncPolarity = 0;
++		monitor[4].ActiveLinesLimit = 576;
++		monitor[4].VirtualLinesLimit = 768;
++		/* SVGA */
++		monitor[5].HfreqMin = 34001;
++		monitor[5].HfreqMax = 38000;
++		monitor[5].VfreqMin = 40;
++		monitor[5].VfreqMax = 80;
++		monitor[5].HfrontPorch = 1.000;
++		monitor[5].HsyncPulse  = 3.200;
++		monitor[5].HbackPorch  = 2.200;
++		monitor[5].VfrontPorch = 0.020;
++		monitor[5].VsyncPulse  = 0.106;
++		monitor[5].VbackPorch  = 0.607;
++		monitor[5].HsyncPolarity = 0;
++		monitor[5].VsyncPolarity = 0;
++		monitor[5].ActiveLinesLimit = 600;
++		monitor[5].VirtualLinesLimit = 768;
++		return 6;
++	} else if (!strcmp(type, "d9200") || !strcmp(type, "m3192")) {
++		/* CGA */
++		monitor[0].HfreqMin = 15250;
++		monitor[0].HfreqMax = 16500;
++		monitor[0].VfreqMin = 40;
++		monitor[0].VfreqMax = 80;
++		monitor[0].HfrontPorch = 2.187;
++		monitor[0].HsyncPulse  = 4.688;
++		monitor[0].HbackPorch  = 6.719;
++		monitor[0].VfrontPorch = 0.190;
++		monitor[0].VsyncPulse  = 0.191;
++		monitor[0].VbackPorch  = 1.018;
++		if (!strcmp(type, "d9200")) {
++			monitor[0].HsyncPolarity = 0;
++			monitor[0].VsyncPolarity = 0;
++		} else {
++			monitor[0].HsyncPolarity = 1;
++			monitor[0].VsyncPolarity = 1;
++		}
++		monitor[0].ActiveLinesLimit = 288;
++		monitor[0].VirtualLinesLimit = 448;
++		/* EGA */
++		monitor[1].HfreqMin = 23900;
++		monitor[1].HfreqMax = 24420;
++		monitor[1].VfreqMin = 40;
++		monitor[1].VfreqMax = 80;
++		monitor[1].HfrontPorch = 2.910;
++		monitor[1].HsyncPulse  = 3.000;
++		monitor[1].HbackPorch  = 4.440;
++		monitor[1].VfrontPorch = 0.451;
++		monitor[1].VsyncPulse  = 0.164;
++		monitor[1].VbackPorch  = 1.048;
++		if (!strcmp(type, "d9200")) {
++			monitor[1].HsyncPolarity = 0;
++			monitor[1].VsyncPolarity = 0;
++		} else {
++			monitor[1].HsyncPolarity = 1;
++			monitor[1].VsyncPolarity = 1;
++		}
++		monitor[1].ActiveLinesLimit = 384;
++		monitor[1].VirtualLinesLimit = 768;
++		/* VGA */
++		monitor[2].HfreqMin = 31000;
++		monitor[2].HfreqMax = 32000;
++		monitor[2].VfreqMin = 40;
++		monitor[2].VfreqMax = 80;
++		monitor[2].HfrontPorch = 0.636;
++		monitor[2].HsyncPulse  = 3.813;
++		monitor[2].HbackPorch  = 1.906;
++		monitor[2].VfrontPorch = 0.318;
++		monitor[2].VsyncPulse  = 0.064;
++		monitor[2].VbackPorch  = 1.048;
++		if (!strcmp(type, "d9200")) {
++			monitor[2].HsyncPolarity = 0;
++			monitor[2].VsyncPolarity = 0;
++		} else {
++			monitor[2].HsyncPolarity = 1;
++			monitor[2].VsyncPolarity = 1;
++		}
++		monitor[2].ActiveLinesLimit = 576;
++		monitor[2].VirtualLinesLimit = 768;
++		if (!strcmp(type, "d9200")) {
++			/* SVGA */
++			monitor[3].HfreqMin = 37000;
++			monitor[3].HfreqMax = 38000;
++			monitor[3].VfreqMin = 40;
++			monitor[3].VfreqMax = 80;
++			monitor[3].HfrontPorch = 1.000;
++			monitor[3].HsyncPulse  = 3.200;
++			monitor[3].HbackPorch  = 2.200;
++			monitor[3].VfrontPorch = 0.020;
++			monitor[3].VsyncPulse  = 0.106;
++			monitor[3].VbackPorch  = 0.607;
++			monitor[3].HsyncPolarity = 0;
++			monitor[3].VsyncPolarity = 0;
++			monitor[3].ActiveLinesLimit = 600;
++			monitor[3].VirtualLinesLimit = 768;
++			return 4;
++		} else
++			return 3;
++	} else if (!strcmp(type, "ega")) {
++		monitor[0].HfreqMin = 24960;
++		monitor[0].HfreqMax = 24960;
++		monitor[0].VfreqMin = 50;
++		monitor[0].VfreqMax = 60;
++		monitor[0].HfrontPorch = 2.910;
++		monitor[0].HsyncPulse  = 3.000;
++		monitor[0].HbackPorch  = 4.440;
++		monitor[0].VfrontPorch = 0.451;
++		monitor[0].VsyncPulse  = 0.164;
++		monitor[0].VbackPorch  = 1.048;
++		monitor[0].HsyncPolarity = 0;
++		monitor[0].VsyncPolarity = 0;
++		monitor[0].ActiveLinesLimit = 384;
++		monitor[0].VirtualLinesLimit = 576;
++		return 1;
++	} else if (!strcmp(type, "vga")) {
++		monitor[0].HfreqMin = 31500;
++		monitor[0].HfreqMax = 31500;
++		monitor[0].VfreqMin = 50;
++		monitor[0].VfreqMax = 70;
++		monitor[0].HfrontPorch = 0.636;
++		monitor[0].HsyncPulse  = 3.813;
++		monitor[0].HbackPorch  = 1.906;
++		monitor[0].VfrontPorch = 0.318;
++		monitor[0].VsyncPulse  = 0.064;
++		monitor[0].VbackPorch  = 1.048;
++		monitor[0].HsyncPolarity = 0;
++		monitor[0].VsyncPolarity = 1;
++		monitor[0].ActiveLinesLimit = 576;
++		monitor[0].VirtualLinesLimit = 768;
++		return 1;
++	} else if (!strcmp(type, "multi")) {
++		monitor[0].HfreqMin = 54200;
++		monitor[0].HfreqMax = 83800;
++		monitor[0].VfreqMin = 49;
++		monitor[0].VfreqMax = 75;
++		monitor[0].HfrontPorch = 1.000;
++		monitor[0].HsyncPulse  = 3.200;
++		monitor[0].HbackPorch  = 2.200;
++		monitor[0].VfrontPorch = 0.020;
++		monitor[0].VsyncPulse  = 0.106;
++		monitor[0].VbackPorch  = 0.607;
++		monitor[0].HsyncPolarity = 1;
++		monitor[0].VsyncPolarity = 1;
++		monitor[0].ActiveLinesLimit = 1080;
++		monitor[0].VirtualLinesLimit = 1080;
++		return 1;
++	} else if (!strcmp(type, "h9110")) {
++		monitor[0].HfreqMin = 15625;
++		monitor[0].HfreqMax = 16670;
++		monitor[0].VfreqMin = 49.5;
++		monitor[0].VfreqMax = 65;
++		monitor[0].HfrontPorch = 2.000;
++		monitor[0].HsyncPulse  = 4.700;
++		monitor[0].HbackPorch  = 8.000;
++		monitor[0].VfrontPorch = 0.064;
++		monitor[0].VsyncPulse  = 0.160;
++		monitor[0].VbackPorch  = 1.056;
++		monitor[0].HsyncPolarity = 0;
++		monitor[0].VsyncPolarity = 0;
++		monitor[0].ActiveLinesLimit = 288;
++		monitor[0].VirtualLinesLimit = 448;
++		return 1;
++	} else if (!strcmp(type, "pal")) {
++		monitor[0].HfreqMin = 15625;
++		monitor[0].HfreqMax = 15625;
++		monitor[0].VfreqMin = 50;
++		monitor[0].VfreqMax = 50;
++		monitor[0].HfrontPorch = 1.650;
++		monitor[0].HsyncPulse  = 4.700;
++		monitor[0].HbackPorch  = 5.000;
++		monitor[0].VfrontPorch = 0.064;
++		monitor[0].VsyncPulse  = 0.192;
++		monitor[0].VbackPorch  = 1.024;
++		monitor[0].HsyncPolarity = 0;
++		monitor[0].VsyncPolarity = 0;
++		monitor[0].ActiveLinesLimit = 312.5;
++		monitor[0].VirtualLinesLimit = 576;
++		return 1;
++	} else if (!strcmp(type, "ntsc")) {
++		monitor[0].HfreqMin = 15734.26;
++		monitor[0].HfreqMax = 15734.26;
++		monitor[0].VfreqMin = 58.95;
++		monitor[0].VfreqMax = 59.95;
++		monitor[0].HfrontPorch = 2.000;
++		monitor[0].HsyncPulse  = 4.700;
++		monitor[0].HbackPorch  = 8.000;
++		monitor[0].VfrontPorch = 0.064;
++		monitor[0].VsyncPulse  = 0.192;
++		monitor[0].VbackPorch  = 1.024;
++		monitor[0].HsyncPolarity = 0;
++		monitor[0].VsyncPolarity = 0;
++		monitor[0].ActiveLinesLimit = 262.5;
++		monitor[0].VirtualLinesLimit = 480;
++		return 1;
++	} else if (!strcmp(type, "generic")) {
++		monitor[0].HfreqMin = 15725;
++		monitor[0].HfreqMax = 15750;
++		monitor[0].VfreqMin = 50;
++		monitor[0].VfreqMax = 60;
++		monitor[0].HfrontPorch = 2.000;
++		monitor[0].HsyncPulse  = 4.700;
++		monitor[0].HbackPorch  = 8.000;
++		monitor[0].VfrontPorch = 0.064;
++		monitor[0].VsyncPulse  = 0.192;
++		monitor[0].VbackPorch  = 1.024;
++		monitor[0].HsyncPolarity = 0;
++		monitor[0].VsyncPolarity = 0;
++		monitor[0].ActiveLinesLimit = 288;
++		monitor[0].VirtualLinesLimit = 448;
++		return 1;
++	} else {
++		monitor[0].HfreqMin = 15250;
++		monitor[0].HfreqMax = 15700;
++		monitor[0].VfreqMin = 49.5;
++		monitor[0].VfreqMax = 65;
++		monitor[0].HfrontPorch = 2.000;
++		monitor[0].HsyncPulse  = 4.700;
++		monitor[0].HbackPorch  = 8.000;
++		monitor[0].VfrontPorch = 0.064;
++		monitor[0].VsyncPulse  = 0.192;
++		monitor[0].VbackPorch  = 1.024;
++		monitor[0].HsyncPolarity = 0;
++		monitor[0].VsyncPolarity = 0;
++		monitor[0].ActiveLinesLimit = 288;
++		monitor[0].VirtualLinesLimit = 448;
++		return 1;
++	}
++	return 0;
++}
+diff -Nru src/emu/switchres/switchres.c src/emu/switchres/switchres.c
+--- src/emu/switchres/switchres.c	1970-01-01 01:00:00.000000000 +0100
++++ src/emu/switchres/switchres.c	2012-07-08 13:15:43.000000000 +0200
+@@ -0,0 +1,387 @@
++#include "emu.h"
++#include "emuopts.h"
++
++/*-------------------------------------------------
++    Calculate Modeline
++--------------------------------------------------*/
++void calc_modeline(running_machine &machine)
++{
++	SwitchRes *switchRes = &machine.switchRes;
++	const game_driver *game = &machine.system();
++	const screen_device *devconfig;
++	machine_config config(*game, machine.options());
++	int w = 640, h = 480;
++	double r = 60.00;
++	int orientation = 0;
++	ConfigSettings *cs = &switchRes->cs;
++	GameInfo *gameInfo = &switchRes->gameInfo;
++	Resolution *resolution = &switchRes->resolution;
++	char modeline[1024]={'\x00'};
++	int monitorModeCnt = 0;
++	int lowest_weight = 99999;
++	int best_weight = 0;
++	int i;
++
++        mame_printf_verbose("SwitchRes: Monitor: %s Orientation: %s Aspect %s\n",
++                cs->monitor, cs->morientation, cs->aspect);
++
++        switchRes->monitorMode = &switchRes->monitorModes[0];
++        memset(&switchRes->monitorModes[0], 0, sizeof(struct MonitorMode));
++
++        devconfig = config.first_screen();
++
++        switch (devconfig->screen_type())
++        {
++                case SCREEN_TYPE_RASTER:        gameInfo->vector = 0;       break;
++                case SCREEN_TYPE_VECTOR:        gameInfo->vector = 1;       break;
++                case SCREEN_TYPE_LCD:           gameInfo->vector = 0;       break;
++                default:                        gameInfo->vector = 0;       break;
++        }
++
++        /* output the orientation as a string */
++        switch (game->flags & ORIENTATION_MASK)
++        {
++                case ORIENTATION_FLIP_X:
++                        //fprintf(out, " rotate=\"0\" flipx=\"yes\"");
++                        orientation = 0;
++                        break;
++                case ORIENTATION_FLIP_Y:
++                        //fprintf(out, " rotate=\"180\" flipx=\"yes\"");
++                        orientation = 0;
++                        break;
++                case ORIENTATION_FLIP_X|ORIENTATION_FLIP_Y:
++                        //fprintf(out, " rotate=\"180\"");
++                        orientation = 0;
++                        break;
++                case ORIENTATION_SWAP_XY:
++                        //fprintf(out, " rotate=\"90\" flipx=\"yes\"");
++                        orientation = 1;
++                        break;
++                case ORIENTATION_SWAP_XY|ORIENTATION_FLIP_X:
++                        //fprintf(out, " rotate=\"90\"");
++                        orientation = 1;
++                        break;
++                case ORIENTATION_SWAP_XY|ORIENTATION_FLIP_Y:
++                        //fprintf(out, " rotate=\"270\"");
++                        orientation = 1;
++                        break;
++                case ORIENTATION_SWAP_XY|ORIENTATION_FLIP_X|ORIENTATION_FLIP_Y:
++                        //fprintf(out, " rotate=\"270\" flipx=\"yes\"");
++                        orientation = 1;
++                        break;
++                default:
++                        //fprintf(out, " rotate=\"0\"");
++                        orientation = 0;
++                        break;
++        }
++
++        /* output width and height only for games that are not vector */
++        if (devconfig->screen_type() != SCREEN_TYPE_VECTOR)
++        {
++                const rectangle &visarea = devconfig->visible_area();
++                int dx = visarea.max_x - visarea.min_x + 1;
++                int dy = visarea.max_y - visarea.min_y + 1;
++
++                w = dx;
++                h = dy;
++        }
++
++        /* refresh rate */
++        r = ATTOSECONDS_TO_HZ(devconfig->refresh_attoseconds());
++
++	gameInfo->screens = 0;
++	screen_device_iterator iter(config.root_device());
++	for (devconfig = iter.first(); devconfig != NULL; devconfig = iter.next())
++		gameInfo->screens++;
++
++	if (resolution->width != 0 && resolution->height != 0) {
++		mame_printf_verbose("SwitchRes: Using changed resolution of %dx%d instead of original\n",
++			resolution->width, resolution->height);
++		gameInfo->width = gameInfo->o_width = resolution->width;
++		gameInfo->height = gameInfo->o_height = resolution->height;
++	} else {
++		gameInfo->width = gameInfo->o_width = w;
++		gameInfo->height = gameInfo->o_height = h;
++	}
++        gameInfo->refresh = gameInfo->o_refresh = r;
++        gameInfo->orientation = orientation;
++
++	// Fill in current resolution settings
++	resolution->refresh = gameInfo->refresh;
++	resolution->orientation = gameInfo->orientation;
++
++	/* Orientation */
++	if (!gameInfo->vector) {
++		int wx = gameInfo->width;
++		int hy = gameInfo->height;
++		if (gameInfo->orientation)
++		{       // orientation = vertical
++			if (!strcmp(cs->morientation, "horizontal") && resolution->width == 0) {
++				gameInfo->width = hy;
++				gameInfo->height = wx;
++			}
++		} else { // horizontal
++			if (!strcmp(cs->morientation, "vertical") && resolution->width == 0) {
++				gameInfo->width = hy;
++				gameInfo->height = wx;
++			}
++		}
++		if ((gameInfo->orientation && !strcmp(cs->morientation, "horizontal")) || (!gameInfo->orientation &&  (!strcmp(cs->morientation, "vertical")))) {
++			double num, den;
++			sscanf(cs->aspect, "%lf:%lf", &den, &num);
++
++			gameInfo->width = Normalize((double)gameInfo->width * (4.0/3.0) / (num/den), 8);
++		}
++	} else {
++		gameInfo->orientation = 0;
++	}
++
++	/* Dual screen games */
++	if (gameInfo->screens > 1 && cs->monitorcount <= 1) {
++		double num, den;
++		sscanf(cs->aspect, "%lf:%lf", &den, &num);
++
++		gameInfo->orientation = 1;
++		gameInfo->height *= 2;
++		gameInfo->width = Normalize((double)gameInfo->width * (4.0/3.0) / (num/den), 8);
++	}
++
++	// Need to run this only on first run if resolution isn't set to auto, and other runs if it wasn't
++	if (strcmp(gameInfo->resolution, "auto")) 
++	{
++		astring error_string;
++		mame_printf_verbose("SwitchRes: Resolution was set at command line or in INI file as %s\n", 
++			gameInfo->resolution);
++
++		machine.options().set_value(OPTION_CHANGERES, false, OPTION_PRIORITY_SWITCHRES, error_string);
++		if (sscanf(gameInfo->resolution, "%dx%dx%d@%lf", &gameInfo->width, &gameInfo->height, &gameInfo->depth, &gameInfo->refresh) < 4)
++			if (sscanf(gameInfo->resolution, "%dx%dx%d@%lf", &gameInfo->width, &gameInfo->height, &gameInfo->depth, &gameInfo->refresh) < 3)
++				if (sscanf(gameInfo->resolution, "%dx%d@%lf", &gameInfo->width, &gameInfo->height, &gameInfo->refresh) < 3)
++					if (sscanf(gameInfo->resolution, "%dx%d@%lf", &gameInfo->width, &gameInfo->height, &gameInfo->refresh) < 2)
++							mame_printf_error("SwitchRes: Illegal resolution value = %s\n", gameInfo->resolution);
++	}
++
++	gameInfo->width = Normalize(gameInfo->width, 8);
++	gameInfo->height = Normalize(gameInfo->height, 8);
++
++	if (!strcmp(machine.options().monitor_specs0(), "auto"))
++        	monitorModeCnt = SetMonitorMode(cs->monitor, switchRes->monitorModes);
++	else {
++        	monitorModeCnt = 0;
++		if (!FillMonitorMode(machine.options().monitor_specs0(), &switchRes->monitorModes[monitorModeCnt]))
++        		monitorModeCnt++;
++		if (strcmp(machine.options().monitor_specs1(), "auto")) {
++			if (!FillMonitorMode(machine.options().monitor_specs1(), &switchRes->monitorModes[monitorModeCnt]))
++        			monitorModeCnt++;
++		} 
++		if (strcmp(machine.options().monitor_specs2(), "auto")) {
++			if (!FillMonitorMode(machine.options().monitor_specs2(), &switchRes->monitorModes[monitorModeCnt]))
++        			monitorModeCnt++;
++		} 
++		if (strcmp(machine.options().monitor_specs3(), "auto")) {
++			if (!FillMonitorMode(machine.options().monitor_specs3(), &switchRes->monitorModes[monitorModeCnt]))
++        			monitorModeCnt++;
++		} 
++		if (strcmp(machine.options().monitor_specs4(), "auto")) {
++			if (!FillMonitorMode(machine.options().monitor_specs4(), &switchRes->monitorModes[monitorModeCnt]))
++        			monitorModeCnt++;
++		} 
++		if (strcmp(machine.options().monitor_specs5(), "auto")) {
++			if (!FillMonitorMode(machine.options().monitor_specs5(), &switchRes->monitorModes[monitorModeCnt]))
++        			monitorModeCnt++;
++		} 
++		if (strcmp(machine.options().monitor_specs6(), "auto")) {
++			if (!FillMonitorMode(machine.options().monitor_specs6(), &switchRes->monitorModes[monitorModeCnt]))
++        			monitorModeCnt++;
++		} 
++		if (strcmp(machine.options().monitor_specs7(), "auto")) {
++			if (!FillMonitorMode(machine.options().monitor_specs7(), &switchRes->monitorModes[monitorModeCnt]))
++        			monitorModeCnt++;
++		} 
++		if (!monitorModeCnt) {
++			mame_printf_error("SwitchResh: ERROR, no custom modes were the correct syntax!!!\n");
++        		monitorModeCnt = SetMonitorMode(cs->monitor, switchRes->monitorModes);
++		}
++
++	}
++
++        /* Get modeline for each monitor mode */
++        for (i = 0 ; i < monitorModeCnt ; i++) {
++			/* Modeline */
++			struct ModeLine *modeLine = NULL;
++			switchRes->monitorMode = &switchRes->monitorModes[i];
++			memset(&switchRes->monitorMode->modeLine, 0, sizeof(struct ModeLine));
++			
++			if (switchRes->monitorMode->HfreqMin == switchRes->monitorMode->HfreqMax)
++				switchRes->monitorMode->HfreqMin -= .01;
++			if (cs->verbose > 2)
++				ShowMonitorMode(switchRes->monitorMode);
++			
++			/* create modeline */
++			ModelineCreate(cs, gameInfo, switchRes->monitorMode, &switchRes->monitorMode->modeLine);
++			modeLine = &switchRes->monitorMode->modeLine;
++			modeLine->weight = ModelineResult(modeLine, cs);
++
++			/* check dotclock */
++			if (modeLine->pclock < cs->dotclockmin) {
++				mame_printf_verbose("SwitchRes: Dotclock too low, doubling horizontal size\n");
++				gameInfo->width *= 2;
++				if (cs->keepaspect)
++				gameInfo->height *= 2;
++
++				ModelineCreate(cs, gameInfo, switchRes->monitorMode, &switchRes->monitorMode->modeLine);
++				switchRes->monitorMode->modeLine.result |= RESULT_LOWDOTCLOCK;
++				modeLine = &switchRes->monitorMode->modeLine;
++                modeLine->weight = ModelineResult(modeLine, cs);
++			}
++			
++			if (cs->verbose > 2) {
++				mame_printf_verbose("SwitchRes: # %s [%d] %dx%d@%.2f %.4fKhz\n", gameInfo->name,
++					modeLine->weight,
++					modeLine->hactive, modeLine->vactive,
++					modeLine->vfreq, modeLine->hfreq/1000);
++				PrintModeline(modeLine, modeline);
++				mame_printf_verbose("SwitchRes: ModeLine     %s\n\n", modeline);
++			}
++		}
++
++        /* Find best weight */
++        for (i = 0 ; i < monitorModeCnt ; i++) {
++			switchRes->monitorMode = &switchRes->monitorModes[i];
++			if (switchRes->monitorMode->modeLine.weight < lowest_weight) {
++				lowest_weight = switchRes->monitorMode->modeLine.weight;
++				best_weight = i;
++			}
++		}
++
++        /* Save best weight */
++		switchRes->monitorMode = &switchRes->monitorModes[best_weight];
++        switchRes->modeLine = &switchRes->monitorMode->modeLine;
++		
++		mame_printf_info("SwitchRes v%s: [%s] (%d) %s (%dx%d@%.2f)->(%dx%d@%.2f)->(%dx%d@%.2f)\n",
++			SWITCHRES_VERSION,
++			gameInfo->name,
++			gameInfo->screens,
++			orientation?"vertical":"horizontal",
++			gameInfo->o_width, gameInfo->o_height, gameInfo->o_refresh,
++			gameInfo->width, gameInfo->height, gameInfo->refresh,
++			switchRes->modeLine->hactive, switchRes->modeLine->vactive, switchRes->modeLine->vfreq);
++}
++
++int switchres_calc_modeline(running_machine &machine)
++{
++	SwitchRes *switchRes = &machine.switchRes;
++	
++        /* Modeline Generation */
++        GameInfo *gameInfo = &switchRes->gameInfo;
++	ModeLine *modeLine = switchRes->modeLine;
++        char modeline[1024]={'\x00'};
++
++        /* Calculate modeline */
++        calc_modeline(machine);
++
++        /* Extract modeline as string */
++	modeLine = switchRes->modeLine;
++
++        /* print out modeline */
++       	PrintModeline(modeLine, modeline);
++        mame_printf_verbose("SwitchRes: # %s %dx%d@%.2f %.4fKhz\n",
++                gameInfo->name,
++                modeLine->hactive, modeLine->vactive,
++                modeLine->vfreq, modeLine->hfreq/1000);
++        mame_printf_verbose("SwitchRes: \tModeLine     %s\n", modeline);
++
++        return 0;
++}
++
++void SetMameOptions(running_machine &machine) 
++{
++	SwitchRes *switchRes = &machine.switchRes;
++	ConfigSettings *cs = &switchRes->cs;
++	GameInfo *gameInfo = &switchRes->gameInfo;
++
++	/* Monitor information */
++	memset(cs, 0, sizeof(struct ConfigSettings));
++	memset(gameInfo, 0, sizeof(struct GameInfo));
++	sprintf(gameInfo->name, "%s", machine.options().system_name());
++	sprintf(cs->monitor, "%s", machine.options().monitor());
++	sprintf(cs->connector, "%s", machine.options().monitor_connector());
++	sprintf(cs->morientation, "%s", machine.options().monitor_orientation());
++	sprintf(cs->aspect, "%s", machine.options().monitor_aspect());
++	sscanf(machine.options().monitor_debug(), "%d", &cs->verbose);
++	sscanf(machine.options().monitor_dotclock(), "%d", &cs->dotclockmin);
++	sscanf(machine.options().monitor_ymin(), "%d", &cs->ymin);
++
++	cs->vsync      = 1;
++	cs->interlace  = 1;
++
++	if (machine.options().monitor_doublescan())
++		cs->doublescan = 1;
++	else
++		cs->doublescan = 0;
++
++	if (machine.options().cleanstretch())
++		switchRes->cs.cleanstretch = 1;
++	else
++		switchRes->cs.cleanstretch = 0;
++	if (machine.options().changeres())
++		switchRes->cs.changeres = 1;
++	else
++		switchRes->cs.changeres = 0;
++
++	sscanf(machine.options().redraw(), "%d", &switchRes->cs.redraw);
++}
++
++void CalculateMameOptions(running_machine &machine) 
++{
++	SwitchRes *switchRes = &machine.switchRes;
++	astring error_string;
++
++	/* Change Mame Options */
++        if (switchRes->modeLine->result & RESULT_VFREQ_DOUBLE) {
++		mame_printf_verbose("SwitchRes: Setting Option -redraw 2\n");
++		switchRes->cs.redraw = 2;
++	} else {
++		mame_printf_verbose("SwitchRes: Setting Option -redraw 0\n");
++		switchRes->cs.redraw = 0;
++	}
++			
++        if (switchRes->modeLine->result & RESULT_VIRTUALIZE || switchRes->modeLine->result & (RESULT_RES_INC|RESULT_RES_DEC)) {
++		mame_printf_verbose("SwitchRes: Setting Option -nocleanstretch\n");
++		switchRes->cs.cleanstretch = 0;
++		machine.options().set_value(OPTION_CLEANSTRETCH, false, OPTION_PRIORITY_SWITCHRES, error_string);
++	} else if (machine.options().cleanstretch()) {
++		mame_printf_verbose("SwitchRes: Setting Option -cleanstretch\n");
++		switchRes->cs.cleanstretch = 1;
++	}
++
++	if (!strcmp(switchRes->cs.morientation, "horizontal")) {
++		mame_printf_verbose("SwitchRes: Setting Option -rotate\n");
++		machine.options().set_value(OPTION_ROTATE, true, OPTION_PRIORITY_SWITCHRES, error_string);
++	} else if (!strcmp(switchRes->cs.morientation, "vertical")) {
++		mame_printf_verbose("SwitchRes: Setting Option -rotate\n");
++		machine.options().set_value(OPTION_ROTATE, true, OPTION_PRIORITY_SWITCHRES, error_string);
++		if (switchRes->gameInfo.orientation == 1) {
++			mame_printf_verbose("SwitchRes: Setting Option -autoror\n");
++			machine.options().set_value(OPTION_AUTOROR, true, OPTION_PRIORITY_SWITCHRES, error_string);
++		} else {
++			mame_printf_verbose("SwitchRes: Setting Option -ror\n");
++			machine.options().set_value(OPTION_ROR, true, OPTION_PRIORITY_SWITCHRES, error_string);
++		}
++	} else if (!strcmp(switchRes->cs.morientation, "rotate")) {
++		mame_printf_verbose("SwitchRes: Setting Option -rotate\n");
++		machine.options().set_value(OPTION_ROTATE, true, OPTION_PRIORITY_SWITCHRES, error_string);
++		if (switchRes->gameInfo.orientation == 1) {
++			mame_printf_verbose("SwitchRes: Setting Option -autoror\n");
++			machine.options().set_value(OPTION_AUTOROR, true, OPTION_PRIORITY_SWITCHRES, error_string);
++		}
++	}
++}
++
++void ResetMameOptions(running_machine &machine)
++{
++	astring error_string;
++
++	/* Reset common MAME options */
++	machine.options().revert(OPTION_PRIORITY_SWITCHRES);
++}
+\ No newline at end of file
+diff -Nru src/emu/switchres/switchres.h src/emu/switchres/switchres.h
+--- src/emu/switchres/switchres.h	1970-01-01 01:00:00.000000000 +0100
++++ src/emu/switchres/switchres.h	2012-07-08 13:15:43.000000000 +0200
+@@ -0,0 +1,186 @@
++/*
++ *
++ *   SwitchRes 2010 Chris Kennedy <c@groovy.org>
++ * 
++ *   SwitchRes is a modeline generator based off of Calamity's 
++ *   Methods of generating modelines
++ *
++ */
++
++#ifndef __SWITCHRES_H__
++#define __SWITCHRES_H__
++
++#include <stdio.h>
++#include <stdlib.h>
++
++#define SWITCHRES_VERSION "0.013f"
++
++#define MAX_MODES 10
++#define MAX_MODELINES 250
++#define MONITOR_TYPES "[cga ega vga multi ntsc pal h9110 d9200 d9800 m2929 m3192]"
++#define MONITOR_CRT 0
++#define MONITOR_LCD 1
++#define VIRTUALIZE  2
++
++#define RESULT_RES_INC      0x00000001
++#define RESULT_RES_DEC      0x00000002
++#define RESULT_INTERLACE    0x00000004
++#define RESULT_DOUBLESCAN   0x00000008
++#define RESULT_VIRTUALIZE   0x00000010
++#define RESULT_HFREQ_CHANGE 0x00000020
++#define RESULT_PADDING      0x00000040
++#define RESULT_VFREQ_CHANGE 0x00000080
++#define RESULT_VFREQ_DOUBLE 0x00000100
++#define RESULT_DOUBLERES    0x00000200
++#define RESULT_LOWDOTCLOCK  0x00000400
++
++typedef struct ConfigSettings {
++	int    verbose;
++	char   monitor[256];
++	char   connector[256];
++	int    interlace;
++	int    doublescan;
++	char   monitorlimit[MAX_MODES][256];
++	int    monitorcount;
++	int    dotclockmin;
++	int    dotclockmax;
++	int    vsync;
++	int    ymin;
++	char   morientation[256];
++	char   aspect[32];
++	int    dcalign;
++	int    redraw;
++	int    cleanstretch;
++	int    changeres;
++	int    keepaspect;
++} ConfigSettings;
++
++typedef struct ModeLine {
++	char   name[256];
++	int    pclock;
++	int    hactive;
++	int    hbegin;
++	int    hend;
++	int    htotal;
++	int    vactive;
++	int    vbegin;
++	int    vend;
++	double vtotal;
++	int    interlace;
++	int    doublescan;
++	int    hsync;
++	int    vsync;
++	//
++	int    result;
++	int    weight;
++	int    vpad;
++	char   label[256];
++	char   resolution[256];
++	int    depth;
++	//
++	double vfreq;
++	int    a_width;
++	int    a_height;
++	double a_vfreq;
++	double hfreq;
++	//
++	char   game[256];
++	//
++	int    desktop;
++	int    custom;
++	//
++	char   regdata[256];
++	int    regdata_size;
++	int    modified;
++	double score;
++} ModeLine;
++
++typedef struct MonitorMode {
++	double HfreqMin;
++	double HfreqMax;
++	double VfreqMin;
++	double VfreqMax;
++	double HfrontPorch;
++	double HsyncPulse;
++	double HbackPorch;
++	double VfrontPorch;
++	double VsyncPulse;
++	double VbackPorch;
++	int    HsyncPolarity;
++	int    VsyncPolarity;
++	//
++	double ActiveLinesLimit;
++	int    VirtualLinesLimit;
++	//
++	int    XresMin;
++	int    YresUserMin;
++	int    YresMin;
++	int    YresMax;
++	//
++	double VerticalBlank;
++	//
++	struct ModeLine modeLine;
++} MonitorMode;
++
++typedef struct GameInfo {
++	char   name[256];
++	int    o_width;
++	int    o_height;
++	double o_refresh;
++	int    width;
++	int    height;
++	int    depth;
++	double refresh;
++	int    orientation;
++	int    screens;
++	int    vector;
++	char   resolution[255];
++} GameInfo;
++
++typedef struct Resolution {
++	int	width;
++	int	height;
++	double	refresh;
++	int	orientation;
++	int	changeres;
++	int	count;
++} Resolution;
++
++typedef struct SwitchRes {
++	struct ConfigSettings cs;
++	struct GameInfo gameInfo;
++	struct Resolution resolution;
++	struct MonitorMode monitorModes[MAX_MODES];
++	struct MonitorMode *monitorMode;
++	struct ModeLine *modeLine;
++	struct ModeLine bestMode;
++	struct ModeLine lastMode;
++	struct ModeLine videoModes[MAX_MODELINES];
++	int modecount;
++} SwitchRes;
++
++/* Modeline Creation */
++int ModelineCreate(ConfigSettings *cs, GameInfo *game, MonitorMode *monitor, ModeLine *mode);
++int ModelineGetLineParams(ModeLine *mode, MonitorMode *monitor);
++int ResVirtualize(ModeLine *mode, MonitorMode *monitor);
++
++/* Modeline Utilities */
++char * PrintModeline(ModeLine *mode, char *modeline);
++int ModelineResult(ModeLine *mode, ConfigSettings *cs);
++
++/* Monitor */
++int SetMonitorMode(char *type, MonitorMode *monitor);
++int ShowMonitorMode(MonitorMode *monitor);
++int FillMonitorMode(const char *line, MonitorMode *monitor);
++
++/* Utilities */
++double Normalize(double a, double b);
++
++/* Main */
++void calc_modeline(running_machine &machine);
++int switchres_calc_modeline(running_machine &machine);
++void SetMameOptions(running_machine &machine);
++void CalculateMameOptions(running_machine &machine);
++void ResetMameOptions(running_machine &machine);
++
++#endif
+diff -Nru src/emu/switchres/util.c src/emu/switchres/util.c
+--- src/emu/switchres/util.c	1970-01-01 01:00:00.000000000 +0100
++++ src/emu/switchres/util.c	2012-07-08 13:15:43.000000000 +0200
+@@ -0,0 +1,29 @@
++/*
++ *
++ *   SwitchRes 2010 Chris Kennedy <c@groovy.org>
++ * 
++ *   SwitchRes is a modeline generator based off of Calamity's 
++ *   Methods of generating modelines
++ *
++ */
++
++#include "emu.h"
++#include "emuopts.h"
++#include <stdio.h>
++#include <stdarg.h>
++#include "math.h"
++
++double Normalize(double a, double b) {
++	double c, e;
++	int d;
++
++	c = (double)a / (double)b;
++	d = a / b;
++	e = c - (double)d;
++	if (e > 0.0)
++		d++;
++	a = d * b;
++
++	return a;
++}
++
+diff -Nru src/emu/video.c src/emu/video.c
+--- src/emu/video.c	2012-07-08 13:13:00.000000000 +0200
++++ src/emu/video.c	2012-07-08 13:15:43.000000000 +0200
+@@ -105,6 +105,7 @@
+ 	  m_overall_emutime(attotime::zero),
+ 	  m_overall_valid_counter(0),
+ 	  m_throttle(machine.options().throttle()),
++	  m_syncrefresh(machine.options().sync_refresh()),
+ 	  m_fastforward(false),
+ 	  m_seconds_to_run(machine.options().seconds_to_run()),
+ 	  m_auto_frameskip(machine.options().auto_frameskip()),
+@@ -239,7 +240,14 @@
+ 
+ 	// ask the OSD to update
+ 	g_profiler.start(PROFILER_BLIT);
+-	machine().osd().update(!debug && skipped_it);
++	//machine().osd().update(!debug && skipped_it);
++	if (machine().switchRes.cs.redraw == 0 || m_speed_percent < 0.75)
++		machine().osd().update(!debug && skipped_it);
++	else {
++		int i;
++		for(i=0; i < machine().switchRes.cs.redraw; i++)
++			machine().osd().update(!debug && skipped_it);
++	}
+ 	g_profiler.stop();
+ 
+ 	// perform tasks for this frame
+@@ -784,6 +792,10 @@
+ 		3,4,4,5,4,5,5,6, 4,5,5,6,5,6,6,7, 4,5,5,6,5,6,6,7, 5,6,6,7,6,7,7,8
+ 	};
+ 
++	// if we're only syncing to the refresh, bail now
++	if (m_syncrefresh)
++		return;
++
+ 	// outer scope so we can break out in case of a resync
+ 	while (1)
+ 	{
+@@ -1056,7 +1068,9 @@
+ 		osd_ticks_t delta_realtime = realtime - m_speed_last_realtime;
+ 		osd_ticks_t tps = osd_ticks_per_second();
+ 		m_speed_percent = delta_emutime.as_double() * (double)tps / (double)delta_realtime;
+-
++		if (m_syncrefresh && m_throttle)
++			m_speed = m_speed_percent * 1000;
++			
+ 		// remember the last times
+ 		m_speed_last_realtime = realtime;
+ 		m_speed_last_emutime = emutime;
+diff -Nru src/emu/video.h src/emu/video.h
+--- src/emu/video.h	2012-07-08 13:13:00.000000000 +0200
++++ src/emu/video.h	2012-07-08 13:15:43.000000000 +0200
+@@ -91,6 +91,7 @@
+ 	int speed_factor() const { return m_speed; }
+ 	int frameskip() const { return m_auto_frameskip ? -1 : m_frameskip_level; }
+ 	bool throttled() const { return m_throttle; }
++	bool sync_refresh() const { return m_syncrefresh; }
+ 	bool fastforward() const { return m_fastforward; }
+ 	bool is_recording() const { return (m_mngfile != NULL || m_avifile != NULL); }
+ 
+@@ -169,6 +170,7 @@
+ 
+ 	// configuration
+ 	bool				m_throttle;					// flag: TRUE if we're currently throttled
++	bool				m_syncrefresh;				// flag: TRUE if we're currently refresh-synced
+ 	bool				m_fastforward;				// flag: TRUE if we're currently fast-forwarding
+ 	UINT32				m_seconds_to_run;			// number of seconds to run before quitting
+ 	bool				m_auto_frameskip;			// flag: TRUE if we're automatically frameskipping
+diff -Nru src/mame/drivers/galaxian.c src/mame/drivers/galaxian.c
+--- src/mame/drivers/galaxian.c	2012-07-08 12:49:44.000000000 +0200
++++ src/mame/drivers/galaxian.c	2012-07-08 13:15:43.000000000 +0200
+@@ -2082,7 +2082,7 @@
+ static MACHINE_CONFIG_START( galaxian_base, galaxian_state )
+ 
+ 	/* basic machine hardware */
+-	MCFG_CPU_ADD("maincpu", Z80, GALAXIAN_PIXEL_CLOCK/3/2)
++	MCFG_CPU_ADD("maincpu", Z80, GALAXIAN_PIXEL_CLOCK/GALAXIAN_XSCALE/2 ) // galaxian fix
+ 	MCFG_CPU_PROGRAM_MAP(galaxian_map)
+ 	MCFG_CPU_VBLANK_INT("screen", interrupt_gen)
+ 
+@@ -2185,7 +2185,7 @@
+ 	MCFG_CPU_VBLANK_INT("screen", fakechange_interrupt_gen)
+ 
+ 	/* basic machine hardware */
+-	MCFG_CPU_ADD("selectcpu", Z80, GALAXIAN_PIXEL_CLOCK/3/2) // ?? mhz
++	MCFG_CPU_ADD("selectcpu", Z80, GALAXIAN_PIXEL_CLOCK/GALAXIAN_XSCALE/2) // ?? mhz // galaxian fix
+ 	MCFG_CPU_PROGRAM_MAP(tenspot_select_map)
+ 	//MCFG_CPU_VBLANK_INT("screen", nmi_line_pulse)
+ 
+@@ -2297,7 +2297,7 @@
+ 	MCFG_CPU_IO_MAP(mshuttle_portmap)
+ 
+ 	/* sound hardware */
+-	MCFG_SOUND_ADD("aysnd", AY8910, GALAXIAN_PIXEL_CLOCK/3/4)
++	MCFG_SOUND_ADD("aysnd", AY8910, GALAXIAN_PIXEL_CLOCK/GALAXIAN_XSCALE/4) // galaxian fix
+ 	MCFG_SOUND_CONFIG(cclimber_ay8910_interface)
+ 	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.50)
+ 
+diff -Nru src/mame/includes/galaxian.h src/mame/includes/galaxian.h
+--- src/mame/includes/galaxian.h	2012-07-08 12:49:51.000000000 +0200
++++ src/mame/includes/galaxian.h	2012-07-08 13:15:43.000000000 +0200
+@@ -7,7 +7,7 @@
+ #include "machine/i8255.h"
+ 
+ /* we scale horizontally by 3 to render stars correctly */
+-#define GALAXIAN_XSCALE			3
++#define GALAXIAN_XSCALE			1 //frogger-galaxian fix
+ 
+ /* master clocks */
+ #define GALAXIAN_MASTER_CLOCK	(18432000)
+diff -Nru src/osd/sdl/osdsdl.h src/osd/sdl/osdsdl.h
+--- src/osd/sdl/osdsdl.h	2012-02-27 09:14:54.000000000 +0100
++++ src/osd/sdl/osdsdl.h	2012-07-08 13:15:43.000000000 +0200
+@@ -67,7 +67,6 @@
+ #define SDLOPTION_NUMPROCESSORS			"numprocessors"
+ 
+ #define SDLOPTION_WAITVSYNC				"waitvsync"
+-#define SDLOPTION_SYNCREFRESH			"syncrefresh"
+ #define SDLOPTION_KEYMAP				"keymap"
+ #define SDLOPTION_KEYMAP_FILE			"keymap_file"
+ #define SDLOPTION_UIMODEKEY				"uimodekey"
+@@ -162,7 +161,6 @@
+ 	bool centerh() const { return bool_value(SDLOPTION_CENTERH); }
+ 	bool centerv() const { return bool_value(SDLOPTION_CENTERV); }
+ 	bool wait_vsync() const { return bool_value(SDLOPTION_WAITVSYNC); }
+-	bool sync_refresh() const { return bool_value(SDLOPTION_SYNCREFRESH); }
+ 	const char *scale_mode() const { return value(SDLOPTION_SCALEMODE); }
+ 
+ 	// OpenGL specific options
+@@ -233,6 +231,7 @@
+ 	// general overridables
+ 	virtual void init(running_machine &machine);
+ 	virtual void update(bool skip_redraw);
++	virtual void update_hi(bool skip_redraw);
+ 
+ 	// debugger overridables
+ 	virtual void init_debugger();
+diff -Nru src/osd/sdl/sdl.mak src/osd/sdl/sdl.mak
+--- src/osd/sdl/sdl.mak	2012-07-08 12:52:00.000000000 +0200
++++ src/osd/sdl/sdl.mak	2012-07-08 13:15:43.000000000 +0200
+@@ -315,7 +315,8 @@
+ 	$(SDLOBJ)/drawsdl.o \
+ 	$(SDLOBJ)/window.o \
+ 	$(SDLOBJ)/output.o \
+-	$(SDLOBJ)/watchdog.o
++	$(SDLOBJ)/watchdog.o \
++	$(SDLOBJ)/switchres.o
+ 
+ # Add SDL2.0 support
+ 
+diff -Nru src/osd/sdl/sdlmain.c src/osd/sdl/sdlmain.c
+--- src/osd/sdl/sdlmain.c	2012-07-08 12:50:01.000000000 +0200
++++ src/osd/sdl/sdlmain.c	2012-07-08 13:15:43.000000000 +0200
+@@ -78,7 +78,8 @@
+ //============================================================
+ //  Global variables
+ //============================================================
+-
++extern bool switchres_modeline_setup(running_machine &machine);
++extern bool switchres_modeline_remove(running_machine &machine);
+ //============================================================
+ //  Local variables
+ //============================================================
+@@ -94,28 +95,23 @@
+ 
+ 	// performance options
+ 	{ NULL,                                   NULL,       OPTION_HEADER,     "PERFORMANCE OPTIONS" },
+-	{ SDLOPTION_MULTITHREADING ";mt",         "0",        OPTION_BOOLEAN,    "enable multithreading; this enables rendering and blitting on a separate thread" },
++	{ SDLOPTION_MULTITHREADING ";mt",         "1",        OPTION_BOOLEAN,    "enable multithreading; this enables rendering and blitting on a separate thread" },
+ 	{ SDLOPTION_NUMPROCESSORS ";np",         "auto",      OPTION_INTEGER,	 "number of processors; this overrides the number the system reports" },
+ 	{ SDLOPTION_SDLVIDEOFPS,                  "0",        OPTION_BOOLEAN,    "show sdl video performance" },
+ 	{ SDLOPTION_BENCH,                        "0",        OPTION_INTEGER,    "benchmark for the given number of emulated seconds; implies -video none -nosound -nothrottle" },
+ 	// video options
+ 	{ NULL,                                   NULL,       OPTION_HEADER,     "VIDEO OPTIONS" },
+-// OS X can be trusted to have working hardware OpenGL, so default to it on for the best user experience
+-#ifdef SDLMAME_MACOSX
+ 	{ SDLOPTION_VIDEO,                   SDLOPTVAL_OPENGL,  OPTION_STRING,   "video output method: soft or opengl" },
+-#else
+-	{ SDLOPTION_VIDEO,                   SDLOPTVAL_SOFT,  OPTION_STRING,     "video output method: soft or opengl" },
+-#endif
++
+ 	{ SDLOPTION_NUMSCREENS,                   "1",        OPTION_INTEGER,    "number of screens to create; SDLMAME only supports 1 at this time" },
+ 	{ SDLOPTION_WINDOW ";w",                  "0",        OPTION_BOOLEAN,    "enable window mode; otherwise, full screen mode is assumed" },
+ 	{ SDLOPTION_MAXIMIZE ";max",              "1",        OPTION_BOOLEAN,    "default to maximized windows; otherwise, windows will be minimized" },
+-	{ SDLOPTION_KEEPASPECT ";ka",             "1",        OPTION_BOOLEAN,    "constrain to the proper aspect ratio" },
+-	{ SDLOPTION_UNEVENSTRETCH ";ues",         "1",        OPTION_BOOLEAN,    "allow non-integer stretch factors" },
++	{ SDLOPTION_KEEPASPECT ";ka",             "0",        OPTION_BOOLEAN,    "constrain to the proper aspect ratio" },
++	{ SDLOPTION_UNEVENSTRETCH ";ues",         "0",        OPTION_BOOLEAN,    "allow non-integer stretch factors" },
+ 	{ SDLOPTION_CENTERH,                      "1",        OPTION_BOOLEAN,    "center horizontally within the view area" },
+ 	{ SDLOPTION_CENTERV,                      "1",        OPTION_BOOLEAN,    "center vertically within the view area" },
+ 	#if (SDL_VERSION_ATLEAST(1,2,10))
+-	{ SDLOPTION_WAITVSYNC ";vs",              "0",        OPTION_BOOLEAN,    "enable waiting for the start of VBLANK before flipping screens; reduces tearing effects" },
+-	{ SDLOPTION_SYNCREFRESH ";srf",           "0",        OPTION_BOOLEAN,    "enable using the start of VBLANK for throttling instead of the game time" },
++	{ SDLOPTION_WAITVSYNC ";vs",              "1",        OPTION_BOOLEAN,    "enable waiting for the start of VBLANK before flipping screens; reduces tearing effects" },
+ 	#endif
+ #if (SDLMAME_SDL2)
+ 	{ SDLOPTION_SCALEMODE ";sm",         SDLOPTVAL_NONE,  OPTION_STRING,     "Scale mode: none, hwblit, hwbest, yv12, yuy2, yv12x2, yuy2x2 (-video soft only)" },
+@@ -125,7 +121,7 @@
+ #if USE_OPENGL
+ 	// OpenGL specific options
+ 	{ NULL,                                   NULL,   OPTION_HEADER,  "OpenGL-SPECIFIC OPTIONS" },
+-	{ SDLOPTION_FILTER ";glfilter;flt",       "1",    OPTION_BOOLEAN, "enable bilinear filtering on screen output" },
++	{ SDLOPTION_FILTER ";glfilter;flt",       "0",    OPTION_BOOLEAN, "enable bilinear filtering on screen output" },
+ 	{ SDLOPTION_PRESCALE,                     "1",    OPTION_INTEGER,                 "scale screen rendering by this amount in software" },
+ 	{ SDLOPTION_GL_FORCEPOW2TEXTURE,          "0",    OPTION_BOOLEAN, "force power of two textures  (default no)" },
+ 	{ SDLOPTION_GL_NOTEXTURERECT,             "0",    OPTION_BOOLEAN, "don't use OpenGL GL_ARB_texture_rectangle (default on)" },
+@@ -185,7 +181,7 @@
+ 
+ 	// full screen options
+ 	{ NULL,                                   NULL,  OPTION_HEADER,     "FULL SCREEN OPTIONS" },
+-	{ SDLOPTION_SWITCHRES,                    "0",   OPTION_BOOLEAN,    "enable resolution switching" },
++	{ SDLOPTION_SWITCHRES,                    "1",   OPTION_BOOLEAN,    "enable resolution switching" },
+ 	#ifdef SDLMAME_X11
+ 	{ SDLOPTION_USEALLHEADS,	             "0",	  OPTION_BOOLEAN,    "split full screen image across monitors" },
+ 	#endif
+@@ -429,6 +425,10 @@
+ 		SDL_Quit();
+ #endif
+ 	}
++	// SwitchRes modeline removal
++	if (machine.options().modeline())
++		switchres_modeline_remove(machine);
++
+ }
+ 
+ //============================================================
+@@ -556,6 +556,9 @@
+ 
+ 	sdl_options &options = downcast<sdl_options &>(machine.options());
+ 	const char *stemp;
++	// Switchres
++	if (machine.options().modeline())
++		switchres_modeline_setup(machine);
+ 
+ 	// determine if we are benchmarking, and adjust options appropriately
+ 	int bench = options.bench();
+diff -Nru src/osd/sdl/switchres.c src/osd/sdl/switchres.c
+--- src/osd/sdl/switchres.c	1970-01-01 01:00:00.000000000 +0100
++++ src/osd/sdl/switchres.c	2012-07-08 13:15:43.000000000 +0200
+@@ -0,0 +1,287 @@
++// MAME headers
++#include "osdepend.h"
++#include "emu.h"
++#include "clifront.h"
++#include "emuopts.h"
++
++// OSD headers
++#include "video.h"
++#include "input.h"
++#include "output.h"
++#include "osdsdl.h"
++#include "sdlos.h"
++
++extern void pick_best_mode(sdl_window_info *window, int *fswidth, int *fsheight);
++
++#define XRANDR_ARGS ""
++
++static int SetXrandrDisplay(const char *connector, ModeLine *mode) {
++        char cmd[1024]={'\x00'};
++        char modeline[255]={'\x00'};
++
++        /* Add new modeline */
++        sprintf(cmd, "xrandr %s --newmode %s", XRANDR_ARGS, PrintModeline(mode, modeline)); 
++	mame_printf_verbose("SwitchRes: Running '%s'\n", cmd);
++	system(cmd);
++
++        /* Add modeline to interface */
++        sprintf(cmd, "xrandr %s --addmode %s %s", XRANDR_ARGS, connector, mode->name);
++	mame_printf_verbose("SwitchRes: Running '%s'\n", cmd);
++	system(cmd);
++
++        return 0;
++}
++
++static int DelXrandrDisplay(const char *connector, const char *name) {
++        char cmd[1024]={'\x00'};
++
++        /* Delete  modeline from interface */
++        sprintf(cmd, "xrandr %s --delmode %s \"%s\"", XRANDR_ARGS, connector, name);
++	mame_printf_verbose("SwitchRes: Running '%s'\n", cmd);
++	system(cmd);
++
++        /* remove modeline */
++        sprintf(cmd, "xrandr %s --rmmode \"%s\"", XRANDR_ARGS, name);
++	mame_printf_verbose("SwitchRes: Running '%s'\n", cmd);
++	system(cmd);
++
++        return 0;
++}
++
++//============================================================
++// switchres_resolution_reset
++//
++//============================================================
++
++bool switchres_resolution_reset(running_machine &machine, sdl_window_info *temp) {
++	// Kick back to original screen resolution then to game resolution
++	// This gets SDL to remember what the original resolution really was
++	if (!temp) {
++		mame_printf_error("SwitchRes: Error with switchres_resolution_reset(), window is NULL!!!\n");
++		return false;
++	}
++	if (temp->fullscreen && video_config.switchres && machine.options().changeres()) {
++		if (machine.switchRes.resolution.count > 1) {
++			mame_printf_verbose("[%d] Switching from %dx%d to %dx%d to help SDL recover\n",
++				machine.switchRes.resolution.count,
++				temp->monitor->center_width, temp->monitor->center_height,
++				temp->minwidth, temp->minheight);
++
++			sdlwindow_resize(temp, temp->monitor->center_width, temp->monitor->center_height);
++			sdlwindow_resize(temp, temp->minwidth, temp->minheight);
++		}
++	}
++	return true;
++}
++
++//============================================================
++// switchres_modeline_remove
++//
++//============================================================
++
++bool switchres_modeline_remove(running_machine &machine) {
++	char modeline[1024]={'\x00'};
++	sdl_options &options = downcast<sdl_options &>(machine.options());
++	astring error_string;
++
++	PrintModeline(machine.switchRes.modeLine, modeline);
++		mame_printf_verbose("SwitchRes: Xrandr REMOVE %s: \tModeLine     %s\n",
++		machine.switchRes.cs.connector, machine.switchRes.modeLine->name);
++
++	// Remove modeline
++	DelXrandrDisplay(machine.switchRes.cs.connector, machine.switchRes.modeLine->name);
++
++	// Reset SDL options
++	ResetMameOptions(machine);
++	options.revert(OPTION_PRIORITY_SWITCHRES);
++
++	return true;
++}
++
++//============================================================
++// switchres_modeline_setup
++//
++//============================================================
++
++bool switchres_modeline_setup(running_machine &machine)
++{
++        bool success = true;
++        bool virtualize = false;
++        char modeline[1024]={'\x00'};
++
++	sdl_options &options = downcast<sdl_options &>(machine.options());
++	astring error_string;
++
++	// Get .ini resolution if any
++	if (!machine.switchRes.resolution.count) {
++		strcpy(machine.switchRes.gameInfo.resolution, options.resolution());
++		machine.switchRes.cs.keepaspect = 1;
++	}
++
++	// Get connector name
++        if (!machine.switchRes.resolution.count && !strcmp(machine.switchRes.cs.connector, "auto")) {
++                FILE *pi;
++                char temp[255] = "xrandr -q | grep ' connected ' | awk '{print $1}' | head -1";
++                pi=popen(temp, "r");
++                if(pi != NULL) {
++                        char c;
++                        int i = 0;
++                        c=fgetc(pi);
++                        while(c != '\n' && i < 255) {
++                                machine.switchRes.cs.connector[i++] = c;
++                                c=fgetc(pi);
++                        }
++                        machine.switchRes.cs.connector[i] = '\0';
++                        pclose(pi);
++                        mame_printf_verbose("SwitchRes: Found output connector '%s'\n",
++                                machine.switchRes.cs.connector);
++                } else
++                        mame_printf_error("SwitchRes: Error getting connector with xrandr");
++        }
++
++        if (machine.switchRes.modeLine) {
++                ModeLine *lastMode;
++                lastMode = machine.switchRes.modeLine;
++
++                memcpy(&machine.switchRes.lastMode, lastMode, sizeof(ModeLine));
++                mame_printf_verbose("SwitchRes: Copy lastMode name %s\n",
++                        lastMode->name);
++        }
++
++        // Generate modeline
++        switchres_calc_modeline(machine);
++
++        // Calculate flags to set options
++        CalculateMameOptions(machine);
++
++		// If not virtualizing, do 1:1 scaling from original for height/width
++		if (!(machine.switchRes.modeLine->result & RESULT_VIRTUALIZE)) {
++			if ((machine.switchRes.modeLine->result & (RESULT_RES_INC|RESULT_RES_DEC)))
++				virtualize = true;
++		} else
++			virtualize = true;
++
++        if (machine.switchRes.modeLine->result & RESULT_VFREQ_CHANGE && !options.sync_refresh()) {
++			mame_printf_verbose("SwitchRes: Disabling VSYNC\n");
++			mame_printf_verbose("SwitchRes: Setting Option -nowaitvsync\n");
++			options.set_value(SDLOPTION_WAITVSYNC, false, OPTION_PRIORITY_SWITCHRES, error_string);
++        } else {
++			mame_printf_verbose("SwitchRes: Enabling VSYNC\n");
++			mame_printf_verbose("SwitchRes: Setting Option -waitvsync\n");
++			options.set_value(SDLOPTION_WAITVSYNC, true, OPTION_PRIORITY_SWITCHRES, error_string);
++        }
++
++		if (virtualize) {
++			// Adjust settings if stretched resolution
++			mame_printf_verbose("SwitchRes: Setting Option -unevenstretch\n");
++			options.set_value(SDLOPTION_UNEVENSTRETCH, true, OPTION_PRIORITY_SWITCHRES, error_string);
++			mame_printf_verbose("SwitchRes: Setting Option -filter\n");
++			options.set_value(SDLOPTION_FILTER, true, OPTION_PRIORITY_SWITCHRES, error_string);
++			mame_printf_verbose("SwitchRes: Setting Option -keepaspect\n");
++			options.set_value(SDLOPTION_KEEPASPECT, true, OPTION_PRIORITY_SWITCHRES, error_string);
++
++                // Aspect ratio specified
++                if ((machine.switchRes.gameInfo.orientation && !strcmp(machine.switchRes.cs.morientation, "horizontal")) ||
++                    (!machine.switchRes.gameInfo.orientation && !strcmp(machine.switchRes.cs.morientation, "vertical")))
++				{
++					mame_printf_verbose("SwitchRes: Setting Option -screen_aspect %s\n", machine.switchRes.cs.aspect);
++					options.set_value(SDLOPTION_ASPECT, machine.switchRes.cs.aspect, OPTION_PRIORITY_SWITCHRES, error_string);
++				}
++		}
++
++        // Add resolution to display for SDL to pick
++        PrintModeline(machine.switchRes.modeLine, modeline);
++        mame_printf_verbose("SwitchRes: Xrandr ADD %s: \tModeLine     %s\n", machine.switchRes.cs.connector, modeline);
++        SetXrandrDisplay(machine.switchRes.cs.connector, machine.switchRes.modeLine);
++
++	if (!strcmp(machine.switchRes.gameInfo.resolution, "auto")) {
++                // Force resolution
++                sprintf(machine.switchRes.modeLine->resolution, "%dx%dx32@%f",
++                        machine.switchRes.modeLine->hactive, machine.switchRes.modeLine->vactive, machine.switchRes.modeLine->vfreq);
++                mame_printf_verbose("SwitchRes: Setting Option -resolution %s\n", machine.switchRes.modeLine->resolution);
++		options.set_value(SDLOPTION_RESOLUTION, machine.switchRes.modeLine->resolution, OPTION_PRIORITY_SWITCHRES, error_string);
++        } else
++                mame_printf_verbose("SwitchRes: INI File resolution: %s\n",
++			machine.switchRes.gameInfo.resolution);
++
++        machine.switchRes.cs.cleanstretch = machine.options().cleanstretch();
++
++        machine.switchRes.resolution.count++;
++
++        return success;
++}
++
++//============================================================
++// switchres_resolution_change
++//
++//============================================================
++
++bool switchres_resolution_change(running_machine &machine, sdl_window_info *window, int width, int height) {
++        SDL_Rect **modes;
++        int i;
++        bool found = false;
++        int oldwidth, oldheight;
++
++        // Set change resolution back to 0
++        machine.switchRes.resolution.changeres = 0;
++
++        oldwidth = machine.switchRes.gameInfo.width;
++        oldheight = machine.switchRes.gameInfo.height;
++
++        // Create new resolution
++        if (machine.options().modeline())
++                switchres_modeline_setup(machine);
++
++        // Get resolution height and width
++        if (machine.options().modeline()) {
++                width = machine.switchRes.gameInfo.width;
++                height = machine.switchRes.gameInfo.height;
++        } else {
++                width = machine.switchRes.resolution.width;
++                height = machine.switchRes.resolution.height;
++        }
++        window->minwidth = width;
++        window->minheight = height;
++
++        // Reread resolutions, only works with hacked SDL
++        modes = SDL_ListModes(NULL, SDL_FULLSCREEN | SDL_DOUBLEBUF);
++        for (i = 0; modes[i]; ++i)
++        {
++                float weight = 0;
++
++                // Make sure we setup a resolution for SDL to use
++                if ((int)modes[i]->w == width)
++                        weight += .5;
++                if ((int)modes[i]->h == height)
++                        weight += .5;
++                if (weight == 1.0)
++                        found = true;
++
++                mame_printf_verbose("SwitchRes: %4dx%4d -> %f\n", (int)modes[i]->w, (int)modes[i]->h, weight);
++        }
++
++        // See if we got it setup right
++        if (!found) {
++                mame_printf_error("SwitchRes: Couldn't get %dx%d resolution, using best mode instead\n",
++                        width, height);
++                pick_best_mode(window, &width, &height);
++        }
++        sdlwindow_resize(window, width, height);
++
++        mame_printf_verbose("SwitchRes: Resolution switch from %dx%d to %dx%d on %dx%d default\n",
++                oldwidth, oldwidth, width, height,
++                window->monitor->center_width, window->monitor->center_height);
++
++        // Delete old modeline
++        if (machine.options().modeline()) {
++                if (found && strcmp(machine.switchRes.lastMode.name, "")) {
++                        mame_printf_verbose("SwitchRes: REMOVE %s: \tMode      %s\n",
++                                machine.switchRes.cs.connector, machine.switchRes.lastMode.name);
++                        DelXrandrDisplay(machine.switchRes.cs.connector, machine.switchRes.lastMode.name);
++                } else
++                        mame_printf_verbose("SwitchRes: No mode named %s\n",
++                                machine.switchRes.lastMode.name);
++        }
++	return true;
++}
++
+diff -Nru src/osd/sdl/video.c src/osd/sdl/video.c
+--- src/osd/sdl/video.c	2012-07-08 12:50:02.000000000 +0200
++++ src/osd/sdl/video.c	2012-07-08 13:15:43.000000000 +0200
+@@ -345,6 +345,33 @@
+ 		debugwin_update_during_game(machine());
+ }
+ 
++//============================================================
++//  update_hi
++//============================================================
++
++void sdl_osd_interface::update_hi(bool skip_redraw)
++{
++	sdl_window_info *window;
++
++	if (m_watchdog != NULL)
++		m_watchdog->reset();
++
++	// if we're not skipping this redraw, update all windows
++	if (!skip_redraw)
++	{
++//      profiler_mark(PROFILER_BLIT);
++		for (window = sdl_window_list; window != NULL; window = window->next)
++			sdlwindow_video_window_update_hi(machine(), window);
++//      profiler_mark(PROFILER_END);
++	}
++
++	// poll the joystick values here
++	sdlinput_poll(machine());
++	check_osd_inputs(machine());
++
++	if ((machine().debug_flags & DEBUG_FLAG_OSD_ENABLED) != 0)
++		debugwin_update_during_game(machine());
++}
+ 
+ //============================================================
+ //  add_primary_monitor
+@@ -665,12 +692,7 @@
+ 	video_config.centerh       = options.centerh();
+ 	video_config.centerv       = options.centerv();
+ 	video_config.waitvsync     = options.wait_vsync();
+-	video_config.syncrefresh   = options.sync_refresh();
+-	if (!video_config.waitvsync && video_config.syncrefresh)
+-	{
+-		mame_printf_warning("-syncrefresh specified without -waitsync. Reverting to -nosyncrefresh\n");
+-		video_config.syncrefresh = 0;
+-	}
++	video_config.syncrefresh   = machine.options().sync_refresh();	
+ 
+ 	if (USE_OPENGL || SDLMAME_SDL2)
+ 	{
+@@ -827,7 +849,7 @@
+ 		data = defdata;
+ 	}
+ 
+-	if (sscanf(data, "%dx%dx%d@%d", &config->width, &config->height, &config->depth, &config->refresh) < 2 && report_error)
++	if (sscanf(data, "%dx%dx%d@%lf", &config->width, &config->height, &config->depth, &config->refresh) < 2 && report_error)
+ 		mame_printf_error("Illegal resolution value = %s\n", data);
+ }
+ 
+diff -Nru src/osd/sdl/video.h src/osd/sdl/video.h
+--- src/osd/sdl/video.h	2011-03-30 08:26:32.000000000 +0200
++++ src/osd/sdl/video.h	2012-07-08 13:15:43.000000000 +0200
+@@ -82,7 +82,7 @@
+ 	int					width;						// decoded width
+ 	int					height;						// decoded height
+ 	int					depth;						// decoded depth
+-	int					refresh;					// decoded refresh
++	double					refresh;					// decoded refresh
+ 
+ 	int					totalColors;		 // total colors from machine
+ };
+diff -Nru src/osd/sdl/window.c src/osd/sdl/window.c
+--- src/osd/sdl/window.c	2012-02-13 09:13:00.000000000 +0100
++++ src/osd/sdl/window.c	2012-07-08 13:15:43.000000000 +0200
+@@ -77,7 +77,9 @@
+ 
+ sdl_window_info *sdl_window_list;
+ 
+-
++extern bool switchres_resolution_reset(running_machine &machine, sdl_window_info *window);
++extern bool switchres_resolution_change(running_machine &machine, sdl_window_info *window, int width, int height);
++ 
+ //============================================================
+ //  LOCAL VARIABLES
+ //============================================================
+@@ -308,6 +310,7 @@
+ 	{
+ 		sdl_window_info *temp = sdl_window_list;
+ 		sdl_window_list = temp->next;
++		switchres_resolution_reset(machine, temp);
+ 		sdlwindow_video_window_destroy(machine, temp);
+ 	}
+ 
+@@ -802,7 +805,7 @@
+ //============================================================
+ 
+ #if SDLMAME_SDL2
+-static void pick_best_mode(sdl_window_info *window, int *fswidth, int *fsheight)
++void pick_best_mode(sdl_window_info *window, int *fswidth, int *fsheight)
+ {
+ 	int minimum_width, minimum_height, target_width, target_height;
+ 	int i;
+@@ -869,7 +872,7 @@
+ 	}
+ }
+ #else
+-static void pick_best_mode(sdl_window_info *window, int *fswidth, int *fsheight)
++void pick_best_mode(sdl_window_info *window, int *fswidth, int *fsheight)
+ {
+ 	int minimum_width, minimum_height, target_width, target_height;
+ 	int i;
+@@ -965,7 +968,12 @@
+ 
+ 		// see if the games video mode has changed
+ 		window->target->compute_minimum_size(tempwidth, tempheight);
+-		if (tempwidth != window->minwidth || tempheight != window->minheight)
++		if (video_config.switchres && window->fullscreen && machine.options().changeres())
++		{
++			if (machine.switchRes.resolution.changeres) 
++				switchres_resolution_change(machine, window, tempwidth, tempheight);
++		}
++		else if (tempwidth != window->minwidth || tempheight != window->minheight)
+ 		{
+ 			window->minwidth = tempwidth;
+ 			window->minheight = tempheight;
+@@ -981,7 +989,7 @@
+ 			}
+ 		}
+ 
+-		if (video_config.waitvsync && video_config.syncrefresh)
++		if (video_config.waitvsync || video_config.syncrefresh)
+ 			event_wait_ticks = osd_ticks_per_second(); // block at most a second
+ 		else
+ 			event_wait_ticks = 0;
+@@ -1007,6 +1015,20 @@
+ 	}
+ }
+ 
++//============================================================
++//  sdlwindow_video_window_update_hi
++//  (main thread)
++//============================================================
++
++void sdlwindow_video_window_update_hi(running_machine &machine, sdl_window_info *window)
++{
++
++	ASSERT_MAIN_THREAD();
++
++	// adjust the cursor state
++	sdlwindow_update_cursor_state(machine, window);
++}
++//============================================================
+ 
+ //============================================================
+ //  set_starting_view
+diff -Nru src/osd/sdl/window.h src/osd/sdl/window.h
+--- src/osd/sdl/window.h	2012-02-13 09:13:00.000000000 +0100
++++ src/osd/sdl/window.h	2012-07-08 13:15:43.000000000 +0200
+@@ -125,6 +125,7 @@
+ // creation/deletion of windows
+ int sdlwindow_video_window_create(running_machine &machine, int index, sdl_monitor_info *monitor, const sdl_window_config *config);
+ void sdlwindow_video_window_update(running_machine &machine, sdl_window_info *window);
++void sdlwindow_video_window_update_hi(running_machine &machine, sdl_window_info *window);
+ void sdlwindow_blit_surface_size(sdl_window_info *window, int window_width, int window_height);
+ void sdlwindow_toggle_full_screen(running_machine &machine, sdl_window_info *window);
+ void sdlwindow_modify_prescale(running_machine &machine, sdl_window_info *window, int dir);
+diff -Nru src/osd/windows/drawd3d.c src/osd/windows/drawd3d.c
+--- src/osd/windows/drawd3d.c	2012-01-13 12:12:28.000000000 +0100
++++ src/osd/windows/drawd3d.c	2012-07-08 13:15:43.000000000 +0200
+@@ -134,15 +134,23 @@
+ //  INLINES
+ //============================================================
+ 
+-INLINE BOOL GetClientRectExceptMenu(HWND hWnd, PRECT pRect, BOOL fullscreen)
++INLINE BOOL GetClientRectExceptMenu(win_window_info *window, PRECT pRect)
+ {
+ 	static HMENU last_menu;
+ 	static RECT last_rect;
+ 	static RECT cached_rect;
++	HWND hWnd = window->hwnd;
++	ModeLine *modeline = window->machine().switchRes.modeLine;
+ 	HMENU menu = GetMenu(hWnd);
+ 	BOOL result = GetClientRect(hWnd, pRect);
+ 
+-	if (!fullscreen || !menu)
++	if (modeline && modeline->custom)
++	{
++		pRect->right = modeline->hactive;
++		pRect->bottom = modeline->vactive;
++	}
++
++	if (!window->fullscreen || !menu)
+ 		return result;
+ 
+ 	// to avoid flicker use cache if we can use
+@@ -525,12 +533,18 @@
+ {
+ 	d3d_info *d3d = (d3d_info *)window->drawdata;
+ 	RECT client;
++	ModeLine *modeline = window->machine().switchRes.modeLine;
++	ModeLine *bestmode = &window->machine().switchRes.bestMode;
+ 
+-	GetClientRectExceptMenu(window->hwnd, &client, window->fullscreen);
++	GetClientRectExceptMenu(window, &client);
+ 	if (rect_width(&client) > 0 && rect_height(&client) > 0)
+ 	{
+-		window->target->set_bounds(rect_width(&client), rect_height(&client), winvideo_monitor_get_aspect(window->monitor));
+-		window->target->set_max_update_rate((d3d->refresh == 0) ? d3d->origmode.RefreshRate : d3d->refresh);
++		float aspect_corrector = 1.0f;
++		if (modeline && modeline->custom) aspect_corrector =
++			((float)bestmode->a_width / (float)bestmode->a_height) / ((float)modeline->hactive / (float)modeline->vactive);
++
++		window->target->set_bounds(rect_width(&client), rect_height(&client), winvideo_monitor_get_aspect(window->monitor)*aspect_corrector);
++ 		window->target->set_max_update_rate((d3d->refresh == 0) ? d3d->origmode.RefreshRate : d3d->refresh);
+ 	}
+ 	return &window->target->get_primitives();
+ }
+@@ -1161,6 +1175,7 @@
+ 	d3d_adapter_identifier identifier;
+ 	d3d_info *d3d = (d3d_info *)window->drawdata;
+ 	HRESULT result;
++	ModeLine *bestmode = &window->machine().switchRes.bestMode;
+ 
+ 	// choose the monitor number
+ 	d3d->adapter = get_adapter_for_monitor(d3d, window->monitor);
+@@ -1188,7 +1203,7 @@
+ 		RECT client;
+ 
+ 		// bounds are from the window client rect
+-		GetClientRectExceptMenu(window->hwnd, &client, window->fullscreen);
++		GetClientRectExceptMenu(window, &client);
+ 		d3d->width = client.right - client.left;
+ 		d3d->height = client.bottom - client.top;
+ 
+@@ -1219,8 +1234,15 @@
+ 		d3d->refresh = d3d->origmode.RefreshRate;
+ 
+ 		// if we're allowed to switch resolutions, override with something better
+-		if (video_config.switchres)
+-			pick_best_mode(window);
++		if (video_config.switchres) {
++			if (bestmode && bestmode->a_width == 0) {
++				pick_best_mode(window);
++			} else {
++				d3d->width = bestmode->a_width;
++				d3d->height = bestmode->a_height;
++				d3d->refresh = bestmode->a_vfreq;
++			}
++		}
+ 	}
+ 
+ 	// see if we can handle the device type
+@@ -1324,10 +1346,6 @@
+ 		if (mode.Width < minwidth || mode.Height < minheight)
+ 			size_score *= 0.01f;
+ 
+-		// if mode is smaller than we'd like, it only scores up to 0.1
+-		if (mode.Width < target_width || mode.Height < target_height)
+-			size_score *= 0.1f;
+-
+ 		// if we're looking for a particular mode, that's a winner
+ 		if (mode.Width == window->maxwidth && mode.Height == window->maxheight)
+ 			size_score = 2.0f;
+@@ -1335,10 +1353,6 @@
+ 		// compute refresh score
+ 		refresh_score = 1.0f / (1.0f + fabs((double)mode.RefreshRate - target_refresh));
+ 
+-		// if refresh is smaller than we'd like, it only scores up to 0.1
+-		if ((double)mode.RefreshRate < target_refresh)
+-			refresh_score *= 0.1f;
+-
+ 		// if we're looking for a particular refresh, make sure it matches
+ 		if (mode.RefreshRate == window->refresh)
+ 			refresh_score = 2.0f;
+@@ -1372,7 +1386,7 @@
+ 	RECT client;
+ 
+ 	// get the current window bounds
+-	GetClientRectExceptMenu(window->hwnd, &client, window->fullscreen);
++	GetClientRectExceptMenu(window, &client);
+ 
+ 	// if we have a device and matching width/height, nothing to do
+ 	if (d3d->device != NULL && rect_width(&client) == d3d->width && rect_height(&client) == d3d->height)
+diff -Nru src/osd/windows/drawdd.c src/osd/windows/drawdd.c
+--- src/osd/windows/drawdd.c	2012-05-21 08:08:22.000000000 +0200
++++ src/osd/windows/drawdd.c	2012-07-08 13:15:43.000000000 +0200
+@@ -432,7 +432,7 @@
+ 	if (result != DD_OK) mame_printf_verbose("DirectDraw: Error %08X unlocking blit surface\n", (int)result);
+ 
+ 	// sync to VBLANK
+-	if ((video_config.waitvsync || video_config.syncrefresh) && window->machine().video().throttled() && (!window->fullscreen || dd->back == NULL))
++	if (video_config.waitvsync && window->machine().video().throttled() && (!window->fullscreen || dd->back == NULL))
+ 	{
+ 		result = IDirectDraw7_WaitForVerticalBlank(dd->ddraw, DDWAITVB_BLOCKBEGIN, NULL);
+ 		if (result != DD_OK) mame_printf_verbose("DirectDraw: Error %08X waiting for VBLANK\n", (int)result);
+@@ -847,6 +847,8 @@
+ 	INT32 newwidth, newheight;
+ 	int xscale, yscale;
+ 	RECT client;
++	ModeLine *modeline = window->machine().switchRes.modeLine;
++	ModeLine *bestmode = &window->machine().switchRes.bestMode;
+ 
+ 	// start with the minimum size
+ 	window->target->compute_minimum_size(newwidth, newheight);
+@@ -854,6 +856,12 @@
+ 	// get the window's client rectangle
+ 	GetClientRect(window->hwnd, &client);
+ 
++	if (modeline && modeline->custom)
++	{
++		client.right = modeline->hactive;
++		client.bottom = modeline->vactive;
++	}
++
+ 	// hardware stretch case: apply prescale
+ 	if (video_config.hwstretch)
+ 	{
+@@ -879,7 +887,11 @@
+ 		if (video_config.keepaspect)
+ 		{
+ 			win_monitor_info *monitor = winwindow_video_window_monitor(window, NULL);
+-			window->target->compute_visible_area(target_width, target_height, winvideo_monitor_get_aspect(monitor), window->target->orientation(), target_width, target_height);
++			float aspect_corrector = 1.0f;
++			if (modeline && modeline->custom) aspect_corrector =
++				((float)bestmode->a_width / (float)bestmode->a_height) / ((float)modeline->hactive / (float)modeline->vactive);
++	
++			window->target->compute_visible_area(target_width, target_height, winvideo_monitor_get_aspect(monitor)*aspect_corrector, window->target->orientation(), target_width, target_height);
+ 			desired_aspect = (float)target_width / (float)target_height;
+ 		}
+ 
+@@ -974,7 +986,8 @@
+ 	RECT clear, outer, dest, source;
+ 	INT32 dstwidth, dstheight;
+ 	HRESULT result;
+-
++	ModeLine *modeline = window->machine().switchRes.modeLine;
++	ModeLine *bestmode = &window->machine().switchRes.bestMode;
+ 	// compute source rect
+ 	source.left = source.top = 0;
+ 	source.right = srcwidth;
+@@ -997,7 +1010,11 @@
+ 	// compute outer rect -- full screen version
+ 	else
+ 	{
+-		calc_fullscreen_margins(window, dd->primarydesc.dwWidth, dd->primarydesc.dwHeight, &outer);
++		if (modeline && modeline->custom)
++			calc_fullscreen_margins(window, modeline->hactive, modeline->vactive, &outer);
++		else
++			calc_fullscreen_margins(window, dd->primarydesc.dwWidth, dd->primarydesc.dwHeight, &outer);
++ 
+ 	}
+ 
+ 	// if we're respecting the aspect ratio, we need to adjust to fit
+@@ -1024,7 +1041,10 @@
+ 	else if (video_config.keepaspect)
+ 	{
+ 		// compute the appropriate visible area
+-		window->target->compute_visible_area(rect_width(&outer), rect_height(&outer), winvideo_monitor_get_aspect(monitor), window->target->orientation(), dstwidth, dstheight);
++		float aspect_corrector = 1.0f;
++		if (modeline && modeline->custom) aspect_corrector = ((float)bestmode->a_width / (float)bestmode->a_height) / ((float)modeline->hactive / (float)modeline->vactive);
++		window->target->compute_visible_area(rect_width(&outer), rect_height(&outer), winvideo_monitor_get_aspect(monitor)*aspect_corrector, window->target->orientation(), dstwidth, dstheight);
++
+ 	}
+ 
+ 	// center within
+@@ -1105,7 +1125,7 @@
+ 	DDDEVICEIDENTIFIER2 identifier;
+ 	dd_info *dd = (dd_info *)window->drawdata;
+ 	HRESULT result;
+-
++	ModeLine *bestmode = &window->machine().switchRes.bestMode;
+ 	// choose the monitor number
+ 	get_adapter_for_monitor(dd, window->monitor);
+ 
+@@ -1146,8 +1166,15 @@
+ 		dd->refresh = dd->origmode.dwRefreshRate;
+ 
+ 		// if we're allowed to switch resolutions, override with something better
+-		if (video_config.switchres)
+-			pick_best_mode(window);
++		if (video_config.switchres) {
++			if (bestmode && bestmode->a_width == 0) {
++				pick_best_mode(window);
++			} else {
++				dd->width = bestmode->a_width;
++				dd->height = bestmode->a_height;
++				dd->refresh = bestmode->a_vfreq;
++			}
++		}
+ 	}
+ 
+ 	// release the DirectDraw object
+@@ -1256,10 +1283,6 @@
+ 	// compute refresh score
+ 	refresh_score = 1.0f / (1.0f + fabs((double)desc->dwRefreshRate - einfo->target_refresh));
+ 
+-	// if refresh is smaller than we'd like, it only scores up to 0.1
+-	if ((double)desc->dwRefreshRate < einfo->target_refresh)
+-		refresh_score *= 0.1f;
+-
+ 	// if we're looking for a particular refresh, make sure it matches
+ 	if (desc->dwRefreshRate == einfo->window->refresh)
+ 		refresh_score = 2.0f;
+diff -Nru src/osd/windows/pstrip.c src/osd/windows/pstrip.c
+--- src/osd/windows/pstrip.c	1970-01-01 01:00:00.000000000 +0100
++++ src/osd/windows/pstrip.c	2012-07-08 13:15:43.000000000 +0200
+@@ -0,0 +1,391 @@
++//http://forums.entechtaiwan.com/index.php?topic=5534.msg20902;topicseen#msg20902
++
++// standard windows headers
++#define WIN32_LEAN_AND_MEAN
++#include <windows.h>
++#include <stdio.h>
++
++// MAME headers
++#include "emu.h"
++#include "clifront.h"
++
++// groovyMAME headers
++#include "pstrip.h"
++
++//============================================================
++//  GLOBALS
++//============================================================
++
++static HWND hPSWnd;
++static MonitorTiming timing_backup;
++
++//============================================================
++//  PROTOTYPES
++//============================================================
++
++int ps_init(int monitor_index);
++int ps_reset(int monitor_index);
++int ps_get_modeline(int monitor_index, ModeLine *modeline);
++int ps_set_modeline(int monitor_index, ModeLine *modeline);
++int ps_get_monitor_timing(int monitor_index, MonitorTiming *timing);
++int ps_set_monitor_timing(int monitor_index, MonitorTiming *timing);
++int ps_set_monitor_timing_string(int monitor_index, char *in);
++int ps_set_refresh(int monitor_index, double vfreq);
++int ps_create_resolution(int monitor_index, ModeLine *modeline);
++static void read_timing_string(char *in, MonitorTiming *timing);
++static void fill_timing_string(char *out, MonitorTiming *timing);
++static int modeline_to_pstiming(ModeLine *modeline, MonitorTiming *timing);
++static int pstiming_to_modeline(MonitorTiming *timing, ModeLine *modeline);
++int ps_monitor_index (const char *display_name);
++
++//============================================================
++//  ps_init
++//============================================================
++
++int ps_init(int monitor_index)
++{
++	hPSWnd = FindWindowA("TPShidden", NULL);
++	
++	if (hPSWnd)
++	{
++		mame_printf_verbose("PStrip: PowerStrip found!\n");
++		ps_get_monitor_timing(monitor_index, &timing_backup);
++		return 1;
++	}
++	else
++	{
++		mame_printf_verbose("PStrip: Could not get PowerStrip API interface\n");
++		return 0;
++	}	
++}
++
++//============================================================
++//  ps_reset
++//============================================================
++
++int ps_reset(int monitor_index)
++{
++	return ps_set_monitor_timing(monitor_index, &timing_backup);
++}
++
++//============================================================
++//  ps_get_modeline
++//============================================================
++
++int ps_get_modeline(int monitor_index, ModeLine *modeline)
++{
++	MonitorTiming timing = {0};
++
++	if (ps_get_monitor_timing(monitor_index, &timing))
++	{
++		pstiming_to_modeline(&timing, modeline);
++		return 1;
++	}
++	else return 0;
++}
++
++//============================================================
++//  ps_set_modeline
++//============================================================
++
++int ps_set_modeline(int monitor_index, ModeLine *modeline)
++{
++	MonitorTiming timing = {0};
++
++	modeline_to_pstiming(modeline, &timing);
++
++	if (ps_set_monitor_timing(monitor_index, &timing))
++		return 1;
++	else
++		return 0;
++}
++
++//============================================================
++//  ps_get_monitor_timing
++//============================================================
++
++int ps_get_monitor_timing(int monitor_index, MonitorTiming *timing)
++{
++	LRESULT lresult;
++	char in[256];
++	
++	if (!hPSWnd) return 0;
++	
++	lresult = SendMessage(hPSWnd, UM_GETTIMING, monitor_index, 0);
++	
++	if (lresult == -1)
++	{
++		mame_printf_verbose("PStrip: Could not get PowerStrip timing string\n");
++		return 0;
++	}
++	
++	if (!GlobalGetAtomNameA(lresult, in, sizeof(in)))
++	{
++		mame_printf_verbose("PStrip: GlobalGetAtomName failed\n");
++		return 0;
++	}
++	
++	mame_printf_verbose("PStrip: ps_get_monitor_timing(%d): %s\n", monitor_index, in);
++	
++	read_timing_string(in, timing);
++	
++	GlobalDeleteAtom(lresult); // delete atom created by PowerStrip
++
++	return 1;
++}
++
++//============================================================
++//  ps_set_monitor_timing
++//============================================================
++
++int ps_set_monitor_timing(int monitor_index, MonitorTiming *timing)
++{
++	LRESULT lresult;
++	ATOM atom;
++	char out[256];
++	
++	if (!hPSWnd) return 0;
++		
++	fill_timing_string(out, timing);
++	atom = GlobalAddAtomA(out);
++	
++	if (atom)
++	{
++		lresult = SendMessage(hPSWnd, UM_SETCUSTOMTIMING, monitor_index, atom);
++		
++		if (lresult < 0)
++		{
++			mame_printf_verbose("PStrip: SendMessage failed\n");
++			GlobalDeleteAtom(atom);
++		}
++		else
++		{
++			mame_printf_verbose("PStrip: ps_set_monitor_timing(%d): %s\n", monitor_index, out);
++			return 1;
++		}
++	}
++	else mame_printf_verbose("PStrip: ps_set_monitor_timing atom creation failed\n");
++
++	return 0;
++}
++
++//============================================================
++//  ps_set_monitor_timing_string
++//============================================================
++
++int ps_set_monitor_timing_string(int monitor_index, char *in)
++{
++	MonitorTiming timing;
++
++	read_timing_string(in, &timing);
++	return ps_set_monitor_timing(monitor_index, &timing);
++}
++
++//============================================================
++//  ps_set_refresh
++//============================================================
++
++int ps_set_refresh(int monitor_index, double vfreq)
++{
++	MonitorTiming timing = {0};
++	int i, hht, vvt, new_vvt;
++	int desired_pClock;
++	int best_pClock = 0;
++	
++	memcpy(&timing, &timing_backup, sizeof(MonitorTiming));
++
++	hht = timing.HorizontalActivePixels
++		+ timing.HorizontalFrontPorch
++		+ timing.HorizontalSyncWidth
++		+ timing.HorizontalBackPorch;
++	
++	vvt = timing.VerticalActivePixels
++		+ timing.VerticalFrontPorch
++		+ timing.VerticalSyncWidth
++		+ timing.VerticalBackPorch;
++
++	desired_pClock = hht * vvt * vfreq / 1000;
++
++	mame_printf_verbose("PStrip: ps_set_refresh(%d) %f Hz, getting stable dotclocks for %d...\n", monitor_index, vfreq, desired_pClock);
++		
++	for (i = -50; i <= 50; i += 25)
++	{
++		timing.PixelClockInKiloHertz = desired_pClock + i;
++	
++		ps_set_monitor_timing(monitor_index, &timing);
++		ps_get_monitor_timing(monitor_index, &timing);
++		
++		if (abs(timing.PixelClockInKiloHertz - desired_pClock) < abs(desired_pClock - best_pClock))
++			
++			best_pClock = timing.PixelClockInKiloHertz;
++	}
++	
++	mame_printf_verbose("PStrip: ps_set_refresh(%d), new dotclock: %d\n", monitor_index, best_pClock);
++
++	new_vvt = best_pClock * 1000 / (vfreq * hht);
++	
++	timing.VerticalBackPorch += (new_vvt - vvt);
++	timing.PixelClockInKiloHertz = best_pClock;
++	
++	ps_set_monitor_timing(monitor_index, &timing);
++	ps_get_monitor_timing(monitor_index, &timing);
++	
++	return 1;
++}
++
++//============================================================
++//  ps_create_resolution
++//============================================================
++
++int ps_create_resolution(int monitor_index, ModeLine *modeline)
++{
++	LRESULT     lresult;
++	ATOM        atom;
++	char        out[256];
++	MonitorTiming timing = {0};
++	
++	if (!hPSWnd) return 0;
++	
++	modeline_to_pstiming(modeline, &timing);
++	
++	fill_timing_string(out, &timing);
++	atom = GlobalAddAtomA(out);
++	
++	if (atom)
++	{
++		lresult = SendMessage(hPSWnd, UM_CREATERESOLUTION, monitor_index, atom);
++		
++		if (lresult < 0)
++        	{
++        		mame_printf_verbose("PStrip: SendMessage failed\n");
++        		GlobalDeleteAtom(atom);
++        	}
++        	else
++        	{
++        		mame_printf_verbose("PStrip: ps_create_resolution(%d): %dx%d succeded \n",
++        			modeline->a_width, modeline->a_height, monitor_index);
++        		return 1;
++        	}
++        }
++        else mame_printf_verbose("PStrip: ps_create_resolution atom creation failed\n");
++	
++	return 0;
++}
++
++//============================================================
++//  read_timing_string
++//============================================================
++
++static void read_timing_string(char *in, MonitorTiming *timing)
++{
++	sscanf(in,"%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
++		&timing->HorizontalActivePixels,
++		&timing->HorizontalFrontPorch,
++		&timing->HorizontalSyncWidth,
++		&timing->HorizontalBackPorch,
++		&timing->VerticalActivePixels,
++		&timing->VerticalFrontPorch,
++		&timing->VerticalSyncWidth,
++		&timing->VerticalBackPorch,
++		&timing->PixelClockInKiloHertz,
++		&timing->TimingFlags.w);
++}
++
++//============================================================
++//  fill_timing_string
++//============================================================
++
++static void fill_timing_string(char *out, MonitorTiming *timing)
++{
++	sprintf(out, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
++		timing->HorizontalActivePixels,
++		timing->HorizontalFrontPorch,
++		timing->HorizontalSyncWidth,
++		timing->HorizontalBackPorch,
++		timing->VerticalActivePixels,
++		timing->VerticalFrontPorch,
++		timing->VerticalSyncWidth,
++		timing->VerticalBackPorch,
++		timing->PixelClockInKiloHertz,
++		timing->TimingFlags.w);
++}
++
++//============================================================
++//  modeline_to_pstiming
++//============================================================
++
++static int modeline_to_pstiming(ModeLine *modeline, MonitorTiming *timing)
++{
++	timing->HorizontalActivePixels = modeline->hactive;
++	timing->HorizontalFrontPorch = modeline->hbegin - modeline->hactive;
++	timing->HorizontalSyncWidth = modeline->hend - modeline->hbegin;
++	timing->HorizontalBackPorch = modeline->htotal - modeline->hend;
++	
++	timing->VerticalActivePixels = modeline->vactive;
++	timing->VerticalFrontPorch = modeline->vbegin - modeline->vactive;
++	timing->VerticalSyncWidth = modeline->vend - modeline->vbegin;
++	timing->VerticalBackPorch = modeline->vtotal - modeline->vend;
++	
++	timing->PixelClockInKiloHertz = modeline->pclock / 1000;
++	
++	if (modeline->hsync == 0)
++		timing->TimingFlags.w |= NegativeHorizontalPolarity;
++	if (modeline->vsync == 0)
++		timing->TimingFlags.w |= NegativeVerticalPolarity;
++	if (modeline->interlace)
++		timing->TimingFlags.w |= Interlace;
++
++	return 0;
++}
++
++//============================================================
++//  pstiming_to_modeline
++//============================================================
++
++static int pstiming_to_modeline(MonitorTiming *timing, ModeLine *modeline)
++{
++	modeline->hactive = timing->HorizontalActivePixels;
++	modeline->hbegin = modeline->hactive + timing->HorizontalFrontPorch;
++	modeline->hend = modeline->hbegin + timing->HorizontalSyncWidth;
++	modeline->htotal = modeline->hend + timing->HorizontalBackPorch;
++	
++	modeline->vactive = timing->VerticalActivePixels;
++	modeline->vbegin = modeline->vactive + timing->VerticalFrontPorch;
++	modeline->vend = modeline->vbegin + timing->VerticalSyncWidth;
++	modeline->vtotal = modeline->vend + timing->VerticalBackPorch;
++	
++	modeline->a_width = modeline->hactive;
++	modeline->a_height = modeline->vactive;
++	
++	sprintf(modeline->name, "Modeline %dx%d", modeline->hactive, modeline->vactive);
++	
++	modeline->pclock = timing->PixelClockInKiloHertz * 1000;
++	
++	if (!(timing->TimingFlags.w & NegativeHorizontalPolarity))
++		modeline->hsync = 1;
++		
++	if (!(timing->TimingFlags.w & NegativeVerticalPolarity))
++		modeline->vsync = 1;
++		
++	if ((timing->TimingFlags.w & Interlace))
++		modeline->interlace = 1;	
++
++	return 0;
++}
++
++//============================================================
++//  pstiming_to_modeline
++//============================================================
++
++int ps_monitor_index (const char *display_name)
++{
++	int monitor_index = 0;
++	char sub_index[2];
++	
++	sub_index[0] = display_name[strlen(display_name)-1];
++	sub_index[1] = 0;
++	if (sscanf(sub_index,"%d", &monitor_index) == 1)
++		monitor_index --;
++		
++	return monitor_index;
++}
+\ No newline at end of file
+diff -Nru src/osd/windows/pstrip.h src/osd/windows/pstrip.h
+--- src/osd/windows/pstrip.h	1970-01-01 01:00:00.000000000 +0100
++++ src/osd/windows/pstrip.h	2012-07-08 13:15:43.000000000 +0200
+@@ -0,0 +1,148 @@
++/* 
++
++UM_SETCUSTOMTIMING = WM_USER+200;  
++wparam = monitor number, zero-based  
++lparam = atom for string pointer  
++lresult = -1 for failure else current pixel clock (integer in Hz)  
++Note: pass full PowerStrip timing string*  
++ 
++UM_SETREFRESHRATE = WM_USER+201;  
++wparam = monitor number, zero-based  
++lparam = refresh rate (integer in Hz), or 0 for read-only  
++lresult = -1 for failure else current refresh rate (integer in Hz)  
++ 
++UM_SETPOLARITY = WM_USER+202;  
++wparam = monitor number, zero-based  
++lparam = polarity bits  
++lresult = -1 for failure else current polarity bits+1  
++ 
++UM_REMOTECONTROL = WM_USER+210;  
++wparam = 99  
++lparam =  
++    0 to hide tray icon  
++    1 to show tray icon,  
++    2 to get build number  
++   10 to show Performance profiles  
++   11 to show Color profiles  
++   12 to show Display profiles  
++   13 to show Application profiles  
++   14 to show Adapter information  
++   15 to show Monitor information  
++   16 to show Hotkey manager  
++   17 to show Resource manager  
++   18 to show Preferences  
++   19 to show Online services  
++   20 to show About screen  
++   21 to show Tip-of-the-day  
++   22 to show Setup wizard  
++   23 to show Screen fonts  
++   24 to show Advanced timing options  
++   25 to show Custom resolutions  
++   99 to close PS  
++lresult = -1 for failure else lparam+1 for success or build number (e.g., 335) 
++if lparam was 2  
++ 
++UM_SETGAMMARAMP = WM_USER+203;  
++wparam = monitor number, zero-based  
++lparam = atom for string pointer  
++lresult = -1 for failure, 1 for success  
++ 
++UM_CREATERESOLUTION = WM_USER+204;  
++wparam = monitor number, zero-based  
++lparam = atom for string pointer  
++lresult = -1 for failure, 1 for success  
++Note: pass full PowerStrip timing string*; reboot is usually necessary to see if
++the resolution is accepted by the display driver  
++ 
++UM_GETTIMING = WM_USER+205;  
++wparam = monitor number, zero-based  
++lresult = -1 for failure else GlobalAtom number identifiying the timing string*  
++Note: be sure to call GlobalDeleteAtom after reading the string associated with 
++the atom  
++ 
++UM_GETSETCLOCKS = WM_USER+206;  
++wparam = monitor number, zero-based  
++lparam = atom for string pointer  
++lresult = -1 for failure else GlobalAtom number identifiying the performance 
++string**  
++Note: pass full PowerStrip performance string** to set the clocks, and ull to 
++get clocks; be sure to call GlobalDeleteAtom after reading the string associated 
++with the atom  
++ 
++NegativeHorizontalPolarity = 0x02;
++NegativeVerticalPolarity = 0x04;
++ 
++*Timing string parameter definition:  
++ 1 = horizontal active pixels  
++ 2 = horizontal front porch  
++ 3 = horizontal sync width  
++ 4 = horizontal back porch  
++ 5 = vertical active pixels  
++ 6 = vertical front porch  
++ 7 = vertical sync width  
++ 8 = vertical back porch  
++ 9 = pixel clock in hertz  
++10 = timing flags, where bit:  
++     1 = negative horizontal porlarity  
++     2 = negative vertical polarity  
++     3 = interlaced  
++     5 = composite sync  
++     7 = sync-on-green  
++     all other bits reserved  
++ 
++**Performance string parameter definition:  
++ 1 = memory clock in hertz  
++ 2 = engine clock in hertz  
++ 3 = reserved  
++ 4 = reserved  
++ 5 = reserved  
++ 6 = reserved  
++ 7 = reserved  
++ 8 = reserved  
++ 9 = 2D memory clock in hertz (if different from 3D)  
++10 = 2D engine clock in hertz (if different from 3D) 
++ 
++*/
++ 
++#define UM_SETCUSTOMTIMING      (WM_USER+200)  
++#define UM_SETREFRESHRATE       (WM_USER+201)  
++#define UM_SETPOLARITY          (WM_USER+202)  
++#define UM_REMOTECONTROL        (WM_USER+210)  
++#define UM_SETGAMMARAMP         (WM_USER+203)  
++#define UM_CREATERESOLUTION     (WM_USER+204)  
++#define UM_GETTIMING            (WM_USER+205) 
++#define UM_GETSETCLOCKS         (WM_USER+206)
++#define UM_SETCUSTOMTIMINGFAST  (WM_USER+211) // glitches vertical sync with PS 3.65 build 568
++ 
++#define NegativeHorizontalPolarity      0x02
++#define NegativeVerticalPolarity        0x04
++#define Interlace			0x08
++
++#define HideTrayIcon                    0x00
++#define ShowTrayIcon                    0x01
++#define ClosePowerStrip                 0x63
++
++typedef struct
++{
++    int HorizontalActivePixels;
++    int HorizontalFrontPorch;
++    int HorizontalSyncWidth;
++    int HorizontalBackPorch;
++    int VerticalActivePixels;
++    int VerticalFrontPorch;
++    int VerticalSyncWidth;
++    int VerticalBackPorch;
++    int PixelClockInKiloHertz;
++    union
++    {
++        int w;
++        struct
++        {
++            unsigned :1;
++            unsigned HorizontalPolarityNegative:1;
++            unsigned VerticalPolarityNegative:1;
++            unsigned :29;
++        } b;
++    } TimingFlags;
++} MonitorTiming;
++
+diff -Nru src/osd/windows/switchres.c src/osd/windows/switchres.c
+--- src/osd/windows/switchres.c	1970-01-01 01:00:00.000000000 +0100
++++ src/osd/windows/switchres.c	2012-07-08 13:15:43.000000000 +0200
+@@ -0,0 +1,964 @@
++// standard windows headers
++#define WIN32_LEAN_AND_MEAN
++#include <windows.h>
++#include <commctrl.h>
++#include <mmsystem.h>
++#include <tchar.h>
++#include <wingdi.h>
++
++// standard C headers
++#include <ctype.h>
++#include <stdarg.h>
++#include <psapi.h>
++#include <dbghelp.h>
++
++// MAME headers
++#include "emu.h"
++#include "clifront.h"
++#include "emuopts.h"
++
++// MAMEOS headers
++#include "winmain.h"
++#include "window.h"
++#include "video.h"
++#include "sound.h"
++#include "input.h"
++#include "output.h"
++#include "config.h"
++#include "osdepend.h"
++#include "strconv.h"
++#include "winutf8.h"
++#include "winutil.h"
++#include "debugger.h"
++
++#define DM_INTERLACED 0x00000002
++#define WM_USER_CHANGERES                      (WM_USER + 8)
++
++extern int ps_init(int monitor_index);
++extern int ps_reset(int monitor_index);
++extern int ps_get_modeline(int monitor_index, ModeLine *modeline);
++extern int ps_set_modeline(int monitor_index, ModeLine *modeline);
++extern int ps_set_refresh(int monitor_index, double vfreq);
++extern int ps_monitor_index (const char *display_name);
++
++static BOOL PowerStripFound;
++
++/*
++static void swap(int* a, int* b)
++{
++    int temp = *a;
++    *a = *b;
++    *b = temp;
++}
++*/
++
++static DWORD RealRes( DWORD x) {
++        return (int) (x / 8) * 8;
++}
++
++//============================================================
++//  reg_query_string
++//============================================================
++
++static TCHAR *reg_query_string(HKEY key, const TCHAR *path)
++{
++	TCHAR *buffer;
++	DWORD datalen;
++	LONG result;
++
++	// first query to get the length
++	result = RegQueryValueEx(key, path, NULL, NULL, NULL, &datalen);
++	if (result != ERROR_SUCCESS)
++		return NULL;
++
++	// allocate a buffer
++	buffer = global_alloc_array(TCHAR, datalen + sizeof(*buffer));
++	buffer[datalen / sizeof(*buffer)] = 0;
++
++	// now get the actual data
++	result = RegQueryValueEx(key, path, NULL, NULL, (LPBYTE)buffer, &datalen);
++	if (result == ERROR_SUCCESS)
++		return buffer;
++
++	// otherwise return a NULL buffer
++	global_free(buffer);
++	return NULL;
++}
++
++static void ResetVideoModes(void) {
++	int iModeNum = 0;
++	HDC hDC;
++	DEVMODE lpDevMode;
++	LPCTSTR lpDriverName, lpDeviceName;
++	
++	lpDriverName = TEXT("DISPLAY");
++
++	hDC = CreateIC ( lpDriverName, NULL, NULL, NULL );
++
++	lpDevMode.dmSize = sizeof(DEVMODE);
++	lpDeviceName = TEXT("\\\\.\\Display1");
++
++	while (EnumDisplaySettings( NULL, iModeNum, &lpDevMode ) != 0)
++		iModeNum++;
++		
++	DeleteDC(hDC);
++	
++	return;
++}
++
++static int GetAvailableVideoModes(const char *display_name, ModeLine VideoMode[MAX_MODELINES], int flags) {
++	int i, iModeNum = 0, k = 0;
++	int a_width, a_height, a_vfreq;
++	bool found;
++	HDC hDC;
++	DEVMODE lpDevMode;
++	LPCTSTR lpDriverName;
++	int DesktopBPP;
++	ModeLine DesktopMode;
++
++	lpDriverName = TEXT("DISPLAY");
++
++	hDC = CreateIC ( lpDriverName, NULL, NULL, NULL );
++	DesktopMode.a_width = GetDeviceCaps ( hDC, HORZRES );
++	DesktopMode.a_height = GetDeviceCaps ( hDC, VERTRES );
++	DesktopBPP = GetDeviceCaps ( hDC, BITSPIXEL );
++	DesktopMode.a_vfreq = GetDeviceCaps ( hDC, VREFRESH );
++	DeleteDC(hDC);
++
++	lpDevMode.dmSize = sizeof(DEVMODE);
++	TCHAR *lpDeviceName = tstring_from_utf8(display_name);
++	
++	if (!strcmp(display_name, "auto"))
++		lpDeviceName = NULL;		
++
++	while (EnumDisplaySettingsEx(lpDeviceName, iModeNum, &lpDevMode, flags) != 0) {
++		if (k > MAX_MODELINES) {
++			mame_printf_error("SwitchRes: Warning, too many active modelines for storage %d\n",	k);
++			break;
++		} else if (lpDevMode.dmBitsPerPel == 32) {
++			a_width = lpDevMode.dmPelsWidth;
++			a_height = lpDevMode.dmPelsHeight;
++			a_vfreq = lpDevMode.dmDisplayFrequency;
++			found = false;
++			for (i = 0; i < k; i++) {
++				if (a_width == VideoMode[i].a_width &&
++					a_height == VideoMode[i].a_height &&
++					a_vfreq == VideoMode[i].a_vfreq) {
++						found = true;
++						break;
++				}
++			}
++			if (!found) {
++				memset(&VideoMode[k], 0, sizeof(struct ModeLine));
++				VideoMode[k].a_width = a_width;
++				VideoMode[k].a_height = a_height;
++				VideoMode[k].a_vfreq = a_vfreq;
++				VideoMode[k].interlace = (lpDevMode.dmDisplayFlags & DM_INTERLACED)?1:0;
++				VideoMode[k].desktop = 0;
++			
++				sprintf(VideoMode[k].label, "SYSTEMMODE%dx%dx0x%d", 
++					VideoMode[k].a_width, VideoMode[k].a_height, (int)VideoMode[k].a_vfreq);
++
++				if (VideoMode[k].a_width == DesktopMode.a_width &&
++						VideoMode[k].a_height == DesktopMode.a_height &&
++								VideoMode[k].a_vfreq == DesktopMode.a_vfreq)
++				{
++						VideoMode[k].desktop = 1;
++				}
++
++				k++;
++			}
++		}
++		iModeNum++;
++	}
++	osd_free(lpDeviceName);
++		
++	return k;
++}
++
++static int CustomModeDataWord(int i, char *lpData) {
++	char out[32] = "";
++	int x;
++
++	sprintf(out, "%02X%02X", lpData[i]&0xFF, lpData[i+1]&0xFF);
++	sscanf(out, "%d", &x);
++	return x;
++}
++
++static int CustomModeDataWordBCD(int i, char *lpData) {
++	char out[32] = "";
++	int x;
++
++	sprintf(out, "%02X%02X", lpData[i]&0xFF, lpData[i+1]&0xFF);
++	sscanf(out, "%04X", &x);
++	return x;
++}
++
++static void SetCustomModeDataWord (char *DataString, long DataWord, int offset) {
++	int DataLow, DataHigh;
++
++	if (DataWord < 65536) {
++		DataLow = DataWord % 256;
++		DataHigh = DataWord / 256;
++		DataString[offset] = DataHigh;
++		DataString[offset+1] = DataLow;
++	}
++}
++
++static void SetCustomModeDataWordBCD (char *DataString, long DataWord, int offset) {
++	if (DataWord < 10000) {
++		int DataLow, DataHigh;
++		int a, b;
++		char out[32] = "";
++
++		DataLow = DataWord % 100;
++		DataHigh = DataWord / 100;
++
++		sprintf(out, "%d %d", DataHigh, DataLow);
++		sscanf(out, "%02X %02X", &a, &b);
++
++		DataString[offset] = a;
++		DataString[offset+1] = b;
++	}
++}
++
++static int SetCustomVideoModes(ConfigSettings *cs, ModeLine *VideoMode, ModeLine *mode, int reset) {
++	HKEY hKey;
++	LONG lRes;
++	TCHAR	dv[1024];
++	TCHAR *DefaultVideo = NULL;
++	DWORD type;
++	char lpValueName[1024];
++	char lpData[1024];
++	int hhh = 0, hhi = 0, hhf = 0, hht = 0, vvv = 0, vvi = 0, vvf = 0, vvt = 0, interlace = 0;
++	double dotclock = 0;
++	long checksum;
++	int old_checksum;
++	int i;
++
++	if (!strcmp(VideoMode->label, "") || !VideoMode->custom)
++		return 0;
++	if (reset && VideoMode->modified != 1) {
++		mame_printf_error("SwitchRes: Error, the %s registry modeline was never modified!!!\n",
++			VideoMode->label);
++		return -1;
++	} else if (!reset && VideoMode->modified == 1) {
++		mame_printf_error("SwitchRes: Error, the %s registry modeline has already been modified!!!\n",
++			VideoMode->label);
++		return -1;
++	}
++	
++	mame_printf_verbose("SwitchRes: %s modeline registry entry for %s\n",
++		reset?"Resetting":"Setting", VideoMode->label);
++
++	if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, TEXT("HARDWARE\\DEVICEMAP\\VIDEO"), 0, KEY_ALL_ACCESS, &hKey) == ERROR_SUCCESS) {
++		TCHAR *chsrc, *chdst;	
++		
++		DefaultVideo = reg_query_string(hKey, TEXT("\\Device\\Video0"));
++		RegCloseKey(hKey);
++
++		if (DefaultVideo == NULL)
++			return -1;
++		
++		chdst = dv;
++		for (chsrc = DefaultVideo + 18; *chsrc != 0; chsrc++)
++			*chdst++ = *chsrc;
++		*chdst = 0;
++	} else {
++		mame_printf_info("SwitchRes: Failed opening DefaultVideo registry\n");
++		return -1;
++	}
++
++	sprintf(lpValueName, "%s", VideoMode->label);
++
++	for(i=0; i < VideoMode->regdata_size; i++) {
++		lpData[i] = VideoMode->regdata[i];
++		if (cs->verbose > 4)
++			mame_printf_verbose("[%02X]", lpData[i]);
++	}
++	if (cs->verbose > 4)
++		mame_printf_verbose("\n");
++
++	SetCustomModeDataWordBCD (lpData, (int)mode->pclock/10000, 38);
++	SetCustomModeDataWordBCD (lpData, mode->hactive, 10);
++	SetCustomModeDataWordBCD (lpData, mode->hbegin, 14);
++	SetCustomModeDataWordBCD (lpData, mode->hend - mode->hbegin, 18);
++	SetCustomModeDataWordBCD (lpData, mode->htotal, 6);
++	SetCustomModeDataWordBCD (lpData, mode->vactive, 26);
++	SetCustomModeDataWordBCD (lpData, mode->vbegin, 30);
++	SetCustomModeDataWordBCD (lpData, mode->vend - mode->vbegin, 34);
++	SetCustomModeDataWordBCD (lpData, mode->vtotal, 22);
++
++	if (mode->interlace)
++		lpData[3] = 0x0e;
++	else
++		lpData[3] = 0x0c;
++
++	dotclock = (double)CustomModeDataWord(38, lpData);
++	hhh = CustomModeDataWord(10, lpData);
++	hhi = CustomModeDataWord(14, lpData);
++	hhf = CustomModeDataWord(18, lpData) + hhi;
++	hht = CustomModeDataWord(6, lpData);
++	vvv = CustomModeDataWord(26, lpData);
++	vvi = CustomModeDataWord(30, lpData);
++	vvf = CustomModeDataWord(34, lpData) + vvi;
++	vvt = CustomModeDataWord(22, lpData);
++	interlace = (lpData[3] == 0x0e)?1:0;
++
++	old_checksum = CustomModeDataWordBCD(66, lpData);
++
++	checksum = 65535 - ((lpData[3] == 0x0e)?0x0e:0x0c) - hht - hhh - hhf - vvt - vvv - vvf - dotclock;
++
++	SetCustomModeDataWord (lpData, checksum, 66);
++
++	for(i=0; i < VideoMode->regdata_size; i++) {
++		if (cs->verbose > 4)
++			mame_printf_verbose("[%02X]", lpData[i]);
++	}
++	if (cs->verbose > 4)
++		mame_printf_verbose("\n");
++
++	if (cs->verbose) { 
++		mame_printf_verbose("SwitchRes: Set Registry mode %s with:\n", VideoMode->label);
++		mame_printf_verbose("SwitchRes: (%d/%d/%ld) Modeline %.6f %d %d %d %d %d %d %d %d%s\n",
++			CustomModeDataWordBCD(66, lpData), 
++			old_checksum, checksum,
++			(double)((double)dotclock * 10000.0)/1000000.0, 
++			(int)RealRes (hhh), (int)RealRes (hhi), 
++			(int)RealRes (hhf), (int)RealRes (hht), 
++			vvv, vvi, vvf, vvt, (interlace)?" interlace":"");
++	}
++
++	if ((lRes = RegOpenKeyEx(HKEY_LOCAL_MACHINE, dv, 0, KEY_ALL_ACCESS, &hKey)) == ERROR_SUCCESS) {
++		type = REG_BINARY;
++
++		// Write registry entry here	
++		if (RegSetValueExA(hKey, lpValueName, 0, type, (LPBYTE)lpData, VideoMode->regdata_size) != ERROR_SUCCESS)
++			mame_printf_info("SwitchRes: Failed saving registry entry for %s modeline\n", VideoMode->label);
++
++		RegCloseKey(hKey);
++	} else {
++		mame_printf_info("SwitchRes: Failed opening %s registry entry with error %d\n", (char*)dv, (int)lRes);
++	}
++	
++	if (DefaultVideo != NULL)
++		global_free(DefaultVideo);
++	if (reset)
++		VideoMode->modified = 0;
++	else
++		VideoMode->modified = 1;
++	return 0;
++}
++
++static int GetCustomVideoModes(ConfigSettings *cs, ModeLine VideoMode[MAX_MODELINES]) {
++	HKEY hKey;
++	int dwIndex = 0, j = -1;
++	int  a_width, a_height, a_vfreq;
++	LONG lRes;
++	TCHAR dv[1024];
++	TCHAR *DefaultVideo = NULL;
++	DWORD type;
++
++	if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, TEXT("HARDWARE\\DEVICEMAP\\VIDEO"), 0, KEY_ALL_ACCESS, &hKey) == ERROR_SUCCESS) {
++		TCHAR *chsrc, *chdst;
++		
++		DefaultVideo = reg_query_string(hKey, TEXT("\\Device\\Video0"));
++		RegCloseKey(hKey);
++		
++		if (DefaultVideo == NULL) {
++			mame_printf_error("SwitchRes: Failed opening \\Device\\Video0 registry\n");
++			return -1;
++		}
++
++		chdst = dv;
++
++		for (chsrc = DefaultVideo + 18; *chsrc != 0; chsrc++)
++				*chdst++ = *chsrc;
++		*chdst = 0;
++	} else {
++		mame_printf_error("SwitchRes: Failed opening DefaultVideo registry\n");
++		return -1;
++	}
++
++	if (cs->verbose)
++		mame_printf_verbose("SwitchRes: DefaultVideo '%s'\n", utf8_from_tstring(dv));
++
++	if ((lRes = RegOpenKeyEx(HKEY_LOCAL_MACHINE, dv, 0, KEY_ALL_ACCESS, &hKey)) == ERROR_SUCCESS) {
++		type = 0;
++		TCHAR lpValueName[1024];
++		char lpData[1024];
++		DWORD lpcValueName = 1024;
++		DWORD lpcData = 1024;
++
++		while (RegEnumValue (hKey, dwIndex, lpValueName, &lpcValueName, NULL, &type, (LPBYTE)lpData, &lpcData) != ERROR_NO_MORE_ITEMS) {
++			dwIndex++;
++
++			if (_tcsstr(lpValueName, TEXT("DALDTMCRTBCD"))) {
++				int hhh = 0, hhi = 0, hhf = 0, hht = 0, vvv = 0, vvi = 0, vvf = 0, vvt = 0, interlace = 0;
++				double dotclock = 0;
++				int checksum;
++				int i = 0, k = 0;
++				int active = 0;
++				
++				if (cs->verbose)
++					mame_printf_verbose("SwitchRes: %s:\n ", utf8_from_tstring(lpValueName));				
++
++				dotclock = (double)CustomModeDataWord(38, lpData);
++				hhh = (int)RealRes(CustomModeDataWord(10, lpData));
++				hhi = (int)RealRes(CustomModeDataWord(14, lpData));
++				hhf = (int)RealRes(CustomModeDataWord(18, lpData)) + hhi;
++				hht = (int)RealRes(CustomModeDataWord(6, lpData));
++				vvv = CustomModeDataWord(26, lpData);
++				vvi = CustomModeDataWord(30, lpData);
++				vvf = CustomModeDataWord(34, lpData) + vvi;
++				vvt = CustomModeDataWord(22, lpData);
++				interlace = (lpData[3] == 0x0e)?1:0;
++
++				checksum = CustomModeDataWordBCD(66, lpData);
++
++				if (cs->verbose)
++					mame_printf_verbose("SwitchRes: (%d/%d) Modeline %.6f %d %d %d %d %d %d %d %d%s\n",
++						checksum, (int)lpcData, (double)((double)dotclock * 10000.0)/1000000.0, 
++						(int)RealRes (hhh), (int)RealRes (hhi), (int)RealRes (hhf), (int)RealRes (hht), 
++						vvv, vvi, vvf, vvt, (interlace)?" interlace":"");
++
++				if (sscanf(utf8_from_tstring(lpValueName), "DALDTMCRTBCD%dx%dx0x%d", &a_width, &a_height, &a_vfreq) != 3) {
++					if (sscanf(utf8_from_tstring(lpValueName), "DALDTMCRTBCD%dX%dX0X%d", &a_width, &a_height, &a_vfreq) != 3) {
++							mame_printf_info("SwitchRes: Failed getting resolution values from %s\n", utf8_from_tstring(lpValueName));
++							continue;
++					}
++				}
++				
++				for (k = 0; k < MAX_MODELINES; k++) {
++					if (VideoMode[k].a_width == a_width &&
++						VideoMode[k].a_height == a_height &&
++						VideoMode[k].a_vfreq == a_vfreq)
++					{
++						active = 1;
++						break;
++					}
++				}
++
++				if (active) {
++					sprintf(VideoMode[k].name, "%dx%d@%d", a_width, a_height, a_vfreq); 
++					VideoMode[k].vfreq = (double)(dotclock * 10000.0) / (vvt * hht);
++					VideoMode[k].pclock  = dotclock * 10000;
++					VideoMode[k].hactive = hhh;
++					VideoMode[k].hbegin  = hhi;
++					VideoMode[k].hend    = hhf;
++					VideoMode[k].htotal  = hht;
++					VideoMode[k].vactive = vvv;
++					VideoMode[k].vbegin  = vvi;
++					VideoMode[k].vend    = vvf;
++					VideoMode[k].vtotal  = vvt;
++					VideoMode[k].interlace  = interlace;
++					VideoMode[k].doublescan  = 0;
++					VideoMode[k].custom  = 1;
++					sprintf(VideoMode[k].resolution, "%dx%d@%f", VideoMode[k].hactive, VideoMode[k].vactive, VideoMode[k].vfreq);
++
++					for(i=0; i < lpcValueName; i++) {
++						VideoMode[k].label[i] = lpValueName[i];
++					}
++					VideoMode[k].regdata_size = lpcData;
++					
++					for(i=0; i < VideoMode[k].regdata_size; i++) {
++						VideoMode[k].regdata[i] = lpData[i];
++						if (cs->verbose > 4)
++							mame_printf_verbose("[%02X]", lpData[i]);
++					}
++					if (cs->verbose > 4)
++						mame_printf_verbose("\n");
++					
++					j++;
++				}
++			}
++
++			lpcValueName = 1024;
++			lpcData = 1024;
++		} 
++
++		RegCloseKey(hKey);
++	} else {
++		mame_printf_error("SwitchRes: Failed opening %s registry entry with error %d\n", utf8_from_tstring(dv), (int)lRes);
++		j = -1;
++	}
++		
++	if (DefaultVideo != NULL)
++		global_free(DefaultVideo);
++
++	return j;
++}
++
++static int findBestMode(int orientation, ModeLine *mode, ModeLine modes[MAX_MODELINES], Resolution magicResolution, ModeLine *bestmode, int flags) {
++	int i;
++	int a_width, a_height, a_vfreq;
++	int index = 0;
++	int desktop_index = -1;
++	int best_index = 0;
++	double best_score = 0;
++	int hscale, vscale;
++	float hrest = 0;
++	float vrest = 0;
++	float vdiff = 0;
++
++	// First try an exact match
++	for (i = 0; i < MAX_MODELINES; i++) {
++		if (!modes[i].a_width)
++			break;
++		if (modes[i].custom && sscanf(modes[i].label, "DALDTMCRTBCD%dx%dx0x%d", &a_width, &a_height, &a_vfreq) != 3) {
++			if (sscanf(modes[i].label, "DALDTMCRTBCD%dX%dX0X%d", &a_width, &a_height, &a_vfreq) != 3) {
++				a_width = modes[i].a_width;
++				a_height = modes[i].a_height;
++				a_vfreq = modes[i].a_vfreq;
++				mame_printf_verbose("SwitchRes: Failed scanning registry modeline label %s, using values %dx%dinstead\n",
++					modes[i].label, a_width, a_vfreq);
++			}
++		} else {
++			a_width = modes[i].a_width;
++			a_height = modes[i].a_height;
++			a_vfreq = modes[i].a_vfreq;
++		}
++
++		// Set score to 0 first
++		modes[i].score = 0;
++
++		if (flags & VIRTUALIZE)
++		{
++			// Calculate score: virtualized case
++			if (a_height <= mode->a_height + 16)
++			{
++				vdiff = (float)fabs(a_height - mode->a_height)/mode->a_height * 100;
++				modes[i].score = 100 - vdiff;				
++			}
++		} else {
++			// Calculate score: normal case
++			hscale = a_width / mode->a_width;
++			vscale = a_height / mode->a_height;
++			if (hscale && vscale)
++			{
++				hrest = (float)(a_width % mode->a_width)/a_width * 100;
++				vrest = (float)(a_height % mode->a_height)/a_height * 100;
++				modes[i].score = 100 - hscale - hrest - vscale - vrest;
++	
++				if (modes[i].interlace != mode->interlace)
++				modes[i].score -= 20;
++			}
++		}
++
++		if ((a_width == magicResolution.width && a_height == magicResolution.height && a_vfreq == magicResolution.refresh && modes[i].custom) ||
++			(a_width == 1234 && a_width >= mode->a_width && a_height == mode->a_height && modes[i].custom) ||
++			(a_width == 1234 && a_width >= mode->a_width && a_height <= 240 && a_height >= mode->a_height && modes[i].custom))
++
++			modes[i].score = 100;
++	}
++
++	// find best score
++	for (i = 0; i < MAX_MODELINES; i++) {
++		if (!modes[i].a_width)
++			break;
++		if (modes[i].desktop)
++			desktop_index = i;
++		if (modes[i].score > 0)
++		{
++			if (modes[i].custom >= modes[best_index].custom)
++			{
++				if (modes[i].custom > modes[best_index].custom) best_score = 0;
++				if (modes[i].score > best_score)
++				{
++					best_score = modes[i].score;
++					best_index = i;
++				}
++			}
++		}
++		mame_printf_verbose("[%d]SwitchRes: %d x %d @ %d%s-> %.02f %s\n",
++			i, modes[i].a_width, modes[i].a_height, (int)modes[i].a_vfreq,
++			modes[i].interlace?"i":"p", modes[i].score,
++			modes[i].custom?"Custom Modeline":"System Modeline");
++	}
++	if (best_score == 0 || flags & MONITOR_LCD)
++		best_index = desktop_index;
++		
++	if (best_index == -1)
++		return -1;
++
++	index = best_index;
++	
++	if (modes[index].modified != 1)
++		memcpy((ModeLine*)bestmode, (ModeLine*)&modes[index], sizeof(ModeLine));
++
++	return index;
++}
++
++
++//============================================================
++// switchres_modeline_remove
++//
++//============================================================
++
++bool switchres_modeline_remove(running_machine &machine)
++{
++	windows_options &options = downcast<windows_options &>(machine.options());
++	astring error_string;
++
++	SetCustomVideoModes(&machine.switchRes.cs, &machine.switchRes.bestMode, &machine.switchRes.bestMode, 1);
++	ResetVideoModes();
++
++	if (machine.options().powerstrip() && PowerStripFound)
++		ps_reset(ps_monitor_index(options.screen()));
++
++	// Reset Windows options
++	ResetMameOptions(machine);
++	options.revert(OPTION_PRIORITY_SWITCHRES);
++
++	return true;
++}
++
++
++//============================================================
++// switchres_modeline_setup
++//
++//============================================================
++bool switchres_modeline_setup(running_machine &machine)
++{
++	ModeLine *bestMode; 
++	char modeline[1024]={'\x00'};
++	bool success = false;
++	int got_res = 0;
++	bool virtualize = false;
++	Resolution magicResolution;
++
++	mame_printf_verbose("SwitchRes: Entering switchres_modeline_setup (%d)\n",
++		machine.switchRes.resolution.count);
++
++	bestMode = &machine.switchRes.bestMode;
++
++	windows_options &options = downcast<windows_options &>(machine.options());
++	astring error_string;
++
++	// Initialize Powerstrip
++	if (machine.options().powerstrip() && ps_init(ps_monitor_index(options.screen())))
++		PowerStripFound = true;
++
++	if (!machine.switchRes.resolution.count) {
++		strcpy(machine.switchRes.gameInfo.resolution, options.resolution());
++	        machine.switchRes.cs.monitorcount = options.numscreens();
++		machine.switchRes.cs.doublescan = 0;
++	}
++
++	// Save old modeline first if it exists
++	if (machine.switchRes.resolution.count > 0) {
++		memcpy(&machine.switchRes.lastMode, bestMode, sizeof(ModeLine));
++		mame_printf_verbose("SwitchRes: Copy lastMode name %s\n",
++			machine.switchRes.lastMode.name);
++	}
++
++	// Generate modeline
++	switchres_calc_modeline(machine);
++
++	if (!machine.switchRes.modeLine) {
++		mame_printf_error("SwitchRes: Modeline was NULL!!!\n");
++		return false;
++	}
++
++	// PowerStrip: tweak modeline
++	if (machine.options().powerstrip() && PowerStripFound)
++		ps_set_refresh(ps_monitor_index(options.screen()), machine.switchRes.modeLine->vfreq);
++
++	// Initially get the registry modelines
++	if (machine.switchRes.modecount == 0) {
++		int custom_count = 0, flags = 0;
++		//if (!strcmp(options.video(), "ddraw"))
++		//	flags = EDS_RAWMODE;
++		machine.switchRes.modecount = GetAvailableVideoModes(options.screen(), machine.switchRes.videoModes, flags);			                
++		custom_count = GetCustomVideoModes(&machine.switchRes.cs,
++			machine.switchRes.videoModes);
++		mame_printf_verbose("SwitchRes: Found %d custom of %d active modelines\n",
++			custom_count, machine.switchRes.modecount);
++	}
++
++	// Check if we're using a magic resolution
++	if (strcmp(machine.options().magic_resolution(), "auto")) {
++		if (sscanf(machine.options().magic_resolution(), "%dx%d@%lf", &magicResolution.width, &magicResolution.height, &magicResolution.refresh) < 3)
++			mame_printf_verbose("SwitchRes: Illegal magic resolution = %s\n", machine.options().magic_resolution());
++	}
++
++	// If we got any, check for the best modeline
++	if (machine.switchRes.modecount > 0) {
++		int orientation = 0, flags = 0;
++		if (machine.switchRes.gameInfo.orientation && !strcmp(machine.switchRes.cs.morientation, "horizontal"))
++			orientation = 1;
++		if (!strcmp(machine.switchRes.cs.monitor, "lcd"))
++			flags |= MONITOR_LCD;
++
++		got_res = findBestMode(orientation, machine.switchRes.modeLine,
++			machine.switchRes.videoModes,
++			magicResolution,
++			bestMode,
++			flags);
++		mame_printf_verbose("SwitchRes: Index %d/%d modeline %s score %.02f %s\n",
++			got_res, machine.switchRes.modecount, bestMode->label, bestMode->score,
++			(got_res >= 0)?"matches":"has no match");
++	} else {
++		got_res = -1;
++		machine.switchRes.modecount = -1;
++		mame_printf_error("SwitchRes: Didn't get any system or custom modelines %d\n", got_res);
++	}
++	
++	// If we got a best mode, setup for use
++	if (got_res != -1) {
++		int use_ini = strcmp(machine.switchRes.gameInfo.resolution, "auto")?1:0;
++		
++		// Got a registry modeline to change refresh rate of
++		mame_printf_verbose("SwitchRes: Got %s modeline %s - %s:\n\t%s\n",
++			bestMode->custom?"Custom":"System",
++			bestMode->resolution, bestMode->label,
++			PrintModeline(bestMode, modeline));
++	
++		// Tweak modeline if height/width changed and not using a magic resolution nor LCD monitor
++		if ((machine.switchRes.modeLine->hactive != bestMode->a_width
++			|| machine.switchRes.modeLine->vactive != bestMode->a_height)
++			&& bestMode->score < 100
++			&& strcmp(machine.switchRes.cs.monitor, "lcd"))
++		{
++			// Turn off .ini file support, since we can't do that 
++			use_ini = 0;
++			
++			// Use values from registry
++			machine.switchRes.gameInfo.width = bestMode->a_width;
++			machine.switchRes.gameInfo.height = bestMode->a_height;
++
++			mame_printf_verbose("SwitchRes: Trying to recalculate modeline %d x %d != %d x %d\n",
++				machine.switchRes.modeLine->hactive,
++				machine.switchRes.modeLine->vactive,
++				bestMode->a_width, bestMode->a_height);
++			
++			// Generate new modeline
++			ModelineCreate(&machine.switchRes.cs,
++				&machine.switchRes.gameInfo,
++				machine.switchRes.monitorMode,
++				machine.switchRes.modeLine);
++			machine.switchRes.modeLine->weight =
++				ModelineResult(machine.switchRes.modeLine,
++				&machine.switchRes.cs);
++			
++			// Double check the height/width, recalculate if necessary (virtualize)
++			if (machine.switchRes.modeLine->hactive != bestMode->a_width
++				|| machine.switchRes.modeLine->vactive != bestMode->a_height) 
++			{
++				virtualize = true;
++
++				mame_printf_verbose("SwitchRes: Trying again to recalculate modeline %d x %d != %d x %d\n",
++					machine.switchRes.modeLine->hactive,
++					machine.switchRes.modeLine->vactive,
++					bestMode->a_width, bestMode->a_height);
++
++				if (machine.switchRes.modecount > 0) {
++					int orientation = 0;
++					int idx = 0;
++					
++					if (machine.switchRes.gameInfo.orientation
++						&& !strcmp(machine.switchRes.cs.morientation, "horizontal"))
++						orientation = 1;
++						
++						// We calculate the highest yres for this monitor in order to virtualize
++						machine.switchRes.modeLine->a_width = 0;
++						machine.switchRes.modeLine->a_height = 
++							(machine.switchRes.monitorMode->HfreqMax / machine.switchRes.gameInfo.refresh)
++							 - round(machine.switchRes.monitorMode->HfreqMax * machine.switchRes.monitorMode->VerticalBlank);
++						mame_printf_verbose("SwitchRes: Trying to virtualize to %d lines\n", machine.switchRes.modeLine->a_height);
++						
++					idx = findBestMode(orientation, machine.switchRes.modeLine,
++						machine.switchRes.videoModes, magicResolution, bestMode, VIRTUALIZE);
++
++					mame_printf_verbose("SwitchRes: Recalculated index %d/%d modeline %s score %.02f %s\n",
++						idx, machine.switchRes.modecount, bestMode->label, bestMode->score,
++						(got_res >= 0)?"matches":"has no match");
++
++					if (bestMode->custom) {
++						machine.switchRes.gameInfo.width = bestMode->a_width;
++						machine.switchRes.gameInfo.height = bestMode->a_height;
++
++						ModelineCreate(&machine.switchRes.cs,
++							&machine.switchRes.gameInfo,
++							machine.switchRes.monitorMode,
++							machine.switchRes.modeLine);
++							machine.switchRes.modeLine->weight =
++							ModelineResult(machine.switchRes.modeLine,
++							&machine.switchRes.cs);
++
++						mame_printf_verbose("SwitchRes: Got %s modeline %s - %s:\n\t%s\n",
++							bestMode->custom?"Custom":"System",
++							bestMode->resolution, bestMode->label,
++							PrintModeline(bestMode, modeline));
++					} else {
++						mame_printf_verbose("SwitchRes: Got %s modeline %s\n",
++							bestMode->custom?"Custom":"System",
++							bestMode->label);
++					}
++					machine.switchRes.gameInfo.width = bestMode->a_width;
++					machine.switchRes.gameInfo.height = bestMode->a_height;
++
++				} else
++					mame_printf_error("SwitchRes: Failed at finding a good modeline!!!\n");
++			}		
++			PrintModeline(machine.switchRes.modeLine, modeline);
++			mame_printf_verbose("SwitchRes: New Modeline: \tModeLine     %s\n",
++				modeline);
++		}
++
++		// Set new resolution settings and reload it into the system
++		if (!bestMode->custom || !strcmp(machine.switchRes.cs.monitor, "lcd")) {
++			machine.switchRes.modeLine->result |= RESULT_VFREQ_CHANGE;
++			success = true;
++		} else if (!SetCustomVideoModes(&machine.switchRes.cs,
++			bestMode, machine.switchRes.modeLine, 0))
++		{
++			machine.switchRes.modeLine->custom = 1;
++			ResetVideoModes();
++			success = true;
++		} else {
++			machine.switchRes.modeLine->result |= RESULT_VIRTUALIZE;
++			mame_printf_error("SwitchRes: Failed setting modeline!!!\n");
++			success = false;
++		}
++
++		if (machine.switchRes.modeLine->result & RESULT_VIRTUALIZE) virtualize = true;
++
++		// Only use cleanstretch if resulting borders are small (score above 80)
++		if (!virtualize && bestMode->score >= 80 && !strcmp(options.video(), "d3d")) {
++			machine.switchRes.cs.cleanstretch = 1;
++			options.set_value(OPTION_CLEANSTRETCH, true, OPTION_PRIORITY_SWITCHRES, error_string);
++		}
++
++		// We always use keepaspect for rotated games (necessary when resolutions are scaled)
++		if (machine.switchRes.gameInfo.orientation && !strcmp(machine.switchRes.cs.morientation, "horizontal")) {
++			mame_printf_verbose("SwitchRes: Setting Option -keepaspect\n");
++			options.set_value(WINOPTION_KEEPASPECT, true, OPTION_PRIORITY_SWITCHRES, error_string);
++		}
++
++		// Calculate flags to set options
++		CalculateMameOptions(machine);
++
++		if (virtualize) {
++			// Adjust settings if stretched resolution
++			mame_printf_verbose("SwitchRes: Setting Option -hwstretch\n");
++			options.set_value(WINOPTION_HWSTRETCH, true, OPTION_PRIORITY_SWITCHRES, error_string);
++			mame_printf_verbose("SwitchRes: Setting Option -keepaspect\n");
++			options.set_value(WINOPTION_KEEPASPECT, true, OPTION_PRIORITY_SWITCHRES, error_string);
++			mame_printf_verbose("SwitchRes: Setting Option -filter\n");
++			options.set_value(WINOPTION_FILTER, true, OPTION_PRIORITY_SWITCHRES, error_string);
++
++			// Aspect ratio specified
++			if ((machine.switchRes.gameInfo.orientation && !strcmp(machine.switchRes.cs.morientation, "horizontal")) ||
++				(!machine.switchRes.gameInfo.orientation && !strcmp(machine.switchRes.cs.morientation, "vertical")))
++			{
++				mame_printf_verbose("SwitchRes: Setting Option -screen_aspect %s\n", machine.switchRes.cs.aspect);
++				options.set_value(WINOPTION_ASPECT, machine.switchRes.cs.aspect, OPTION_PRIORITY_SWITCHRES, error_string);
++			}
++		}
++
++		// If using Powerstrip, disable resolution switching by now
++		if (PowerStripFound) {
++			mame_printf_verbose("SwitchRes: Setting Option -noswitchres\n");
++			options.set_value(WINOPTION_SWITCHRES, false, OPTION_PRIORITY_SWITCHRES, error_string);
++		}
++			
++		// If interlacing, we need the filter on
++		if (bestMode->interlace) {
++			mame_printf_verbose("SwitchRes: Setting Option -filter\n");
++			options.set_value(WINOPTION_FILTER, true, OPTION_PRIORITY_SWITCHRES, error_string);
++		}
++
++		if (options.triple_buffer()) options.set_value(OPTION_SYNCREFRESH, FALSE, OPTION_PRIORITY_SWITCHRES, error_string);
++
++		if ((machine.switchRes.modeLine->result & RESULT_VFREQ_CHANGE && !options.sync_refresh()) || options.triple_buffer()) {
++			// Resolution doesn't match refresh rate
++			mame_printf_verbose("SwitchRes: Disabling VSYNC\n");
++			mame_printf_verbose("SwitchRes: Setting Option -nowaitvsync\n");
++			options.set_value(WINOPTION_WAITVSYNC, false, OPTION_PRIORITY_SWITCHRES, error_string);
++		} else {
++			// Resolution matches refresh rate
++			mame_printf_verbose("SwitchRes: Enabling VSYNC\n");
++			mame_printf_verbose("SwitchRes: Setting Option -waitvsync\n");
++			options.set_value(WINOPTION_WAITVSYNC, true, OPTION_PRIORITY_SWITCHRES, error_string);
++		}
++		
++		// Force resolution
++		if (!use_ini) {
++			sprintf(machine.switchRes.bestMode.resolution, "%dx%d@%d",
++				machine.switchRes.bestMode.a_width, machine.switchRes.bestMode.a_height,
++				(int)machine.switchRes.bestMode.a_vfreq);
++
++			mame_printf_verbose("SwitchRes: Setting Option -resolution %s\n", machine.switchRes.bestMode.resolution);
++			options.set_value(WINOPTION_RESOLUTION, machine.switchRes.bestMode.resolution,
++				OPTION_PRIORITY_SWITCHRES, error_string);
++			
++			// Setup video config resolution parameters screen 1
++			video_config.window[0].refresh = (int)machine.switchRes.bestMode.a_vfreq;
++			video_config.window[0].width = machine.switchRes.bestMode.a_width;
++			video_config.window[0].height = machine.switchRes.bestMode.a_height;
++		} else
++			mame_printf_verbose("SwitchRes: INI File resolution: %dx%d@%d\n",
++			video_config.window[0].width, video_config.window[0].height,
++			video_config.window[0].refresh);
++		
++		machine.switchRes.cs.cleanstretch = machine.options().cleanstretch();
++		machine.switchRes.resolution.count++;
++		
++		// Refresh video options
++		extract_video_config (machine);
++
++	} else {
++		mame_printf_error("SwitchRes: Couldn't find a working resolution for %dx%d@%d\n",
++		machine.switchRes.modeLine->a_width,
++		machine.switchRes.modeLine->a_height,
++		(int)machine.switchRes.gameInfo.refresh);
++	}
++return success;
++}
++
++//============================================================
++// switchres_resolution_change
++//
++//============================================================
++
++bool switchres_resolution_change(win_window_info *window) 
++{
++        window->machine().switchRes.resolution.changeres = 0;
++        if (window->machine().options().modeline()) {
++                mame_printf_verbose("SwitchRes: Resolution change to %dx%d@%d\n",
++                        window->machine().switchRes.resolution.width,
++                        window->machine().switchRes.resolution.height,
++                        (int)window->machine().switchRes.resolution.refresh);
++
++                switchres_modeline_setup(window->machine());
++
++                window->maxwidth =
++                        window->machine().switchRes.bestMode.a_width;
++                window->maxheight =
++                        window->machine().switchRes.bestMode.a_height;
++
++                // Reset old video modeline
++                if (window->machine().switchRes.resolution.count > 1 
++			&& (window->machine().switchRes.lastMode.a_height != 
++				window->machine().switchRes.bestMode.a_height 
++			|| window->machine().switchRes.lastMode.a_width !=
++				window->machine().switchRes.bestMode.a_width)) 
++		{
++                        SetCustomVideoModes(&window->machine().switchRes.cs,
++                                &window->machine().switchRes.lastMode,
++                                &window->machine().switchRes.lastMode, 1);
++			ResetVideoModes();
++                }
++        } else {
++                window->maxwidth =
++                        window->machine().switchRes.resolution.width;
++                window->maxheight =
++                        window->machine().switchRes.resolution.height;
++        }
++
++        // Change resolution
++        SendMessage(window->hwnd, WM_USER_CHANGERES, 0, 0);
++
++	return true;
++}
+diff -Nru src/osd/windows/video.c src/osd/windows/video.c
+--- src/osd/windows/video.c	2012-07-08 13:13:00.000000000 +0200
++++ src/osd/windows/video.c	2012-07-08 13:15:43.000000000 +0200
+@@ -96,7 +96,6 @@
+ 
+ static void check_osd_inputs(running_machine &machine);
+ 
+-static void extract_video_config(running_machine &machine);
+ static float get_aspect(const char *defdata, const char *data, int report_error);
+ static void get_resolution(const char *defdata, const char *data, win_window_config *config, int report_error);
+ 
+@@ -404,7 +403,7 @@
+ //  extract_video_config
+ //============================================================
+ 
+-static void extract_video_config(running_machine &machine)
++void extract_video_config(running_machine &machine)
+ {
+ 	windows_options &options = downcast<windows_options &>(machine.options());
+ 	const char *stemp;
+@@ -446,7 +445,7 @@
+ 		video_config.mode = VIDEO_MODE_GDI;
+ 	}
+ 	video_config.waitvsync     = options.wait_vsync();
+-	video_config.syncrefresh   = options.sync_refresh();
++	video_config.syncrefresh   = machine.options().sync_refresh();
+ 	video_config.triplebuf     = options.triple_buffer();
+ 	video_config.switchres     = options.switch_res();
+ 
+diff -Nru src/osd/windows/video.h src/osd/windows/video.h
+--- src/osd/windows/video.h	2011-03-30 08:26:32.000000000 +0200
++++ src/osd/windows/video.h	2012-07-08 13:15:43.000000000 +0200
+@@ -126,7 +126,7 @@
+ //============================================================
+ 
+ void winvideo_init(running_machine &machine);
+-
++void extract_video_config(running_machine &machine);
+ void winvideo_monitor_refresh(win_monitor_info *monitor);
+ float winvideo_monitor_get_aspect(win_monitor_info *monitor);
+ win_monitor_info *winvideo_monitor_from_handle(HMONITOR monitor);
+diff -Nru src/osd/windows/window.c src/osd/windows/window.c
+--- src/osd/windows/window.c	2012-07-08 13:13:00.000000000 +0200
++++ src/osd/windows/window.c	2012-07-08 13:15:43.000000000 +0200
+@@ -73,7 +73,7 @@
+ extern int drawgdi_init(running_machine &machine, win_draw_callbacks *callbacks);
+ extern int drawdd_init(running_machine &machine, win_draw_callbacks *callbacks);
+ extern int drawd3d_init(running_machine &machine, win_draw_callbacks *callbacks);
+-
++extern bool switchres_resolution_change(win_window_info *window);
+ 
+ //============================================================
+ //  PARAMETERS
+@@ -103,7 +103,7 @@
+ #define WM_USER_SET_MINSIZE				(WM_USER + 5)
+ #define WM_USER_UI_TEMP_PAUSE			(WM_USER + 6)
+ #define WM_USER_EXEC_FUNC				(WM_USER + 7)
+-
++#define WM_USER_CHANGERES				(WM_USER + 8)
+ 
+ 
+ //============================================================
+@@ -144,7 +144,12 @@
+ 
+ static HANDLE ui_pause_event;
+ static HANDLE window_thread_ready_event;
+-
++static HANDLE blit_pending;
++static HANDLE blit_done;
++static DWORD blit_threadid;
++static int blitting_active;
++static BOOL blit_lock;
++static BOOL blit_unlock;
+ 
+ 
+ //============================================================
+@@ -169,7 +174,7 @@
+ 
+ static void adjust_window_position_after_major_change(win_window_info *window);
+ static void set_fullscreen(win_window_info *window, int fullscreen);
+-
++static DWORD WINAPI blit_loop(LPVOID lpParameter);
+ 
+ // temporary hacks
+ #if LOG_THREADS
+@@ -310,7 +315,18 @@
+ 
+ 	// kill the drawers
+ 	(*draw.exit)();
+-
++	
++	// end blitting thread
++	if (multithreading_enabled)
++	{
++		blitting_active = FALSE;
++		SetEvent(blit_pending);
++		WaitForSingleObject(blit_done, 1000);
++		CloseHandle (blit_pending);
++		CloseHandle (blit_done);
++		mame_printf_verbose("Blitting thread destroyed\n");
++	}
++	
+ 	// if we're multithreaded, clean up the window thread
+ 	if (multithreading_enabled)
+ 	{
+@@ -697,6 +713,18 @@
+ 	// set the initial maximized state
+ 	window->startmaximized = options.maximize();
+ 
++	// create blitting thread
++	if (multithreading_enabled)
++	{	
++		mame_printf_verbose("Blitting thread created\n");
++		blitting_active = TRUE;
++		blit_lock = TRUE;
++		mame_printf_verbose("winwindow_video_window_create: blit_lock = TRUE\n");
++		blit_pending = CreateEvent(NULL, FALSE, FALSE, NULL);
++		blit_done = CreateEvent(NULL, FALSE, FALSE, NULL);
++		CreateThread (NULL, 0, blit_loop, (LPVOID)window, 0, &blit_threadid);
++	}
++
+ 	// finish the window creation on the window thread
+ 	if (multithreading_enabled)
+ 	{
+@@ -750,7 +778,67 @@
+ 	global_free(window);
+ }
+ 
++//============================================================
++//  blit_loop
++//  (blitting thread)
++//============================================================
++
++static DWORD WINAPI blit_loop(LPVOID lpParameter)
++{
++	win_window_info *window = (win_window_info *)lpParameter;
++	bool m_throttled;
++
++	mame_printf_verbose("Blitting thread started\n");
++	
++	do {
++		WaitForSingleObject(blit_pending, INFINITE);
++		m_throttled = window->machine().video().throttled();
++		if (!blit_lock) draw_video_contents(window, NULL, FALSE);
++		if (m_throttled) SetEvent(blit_done);
++		
++	} while (blitting_active);
++
++	mame_printf_verbose("Blitting thread ended\n");
++	
++	return -1;
++
++}
++
++//============================================================
++//  blit_lock_set
++//  (window thread)
++//============================================================
+ 
++void blit_lock_set ()
++{
++	blit_lock = TRUE;
++	mame_printf_verbose("blit_lock = TRUE\n");
++	Sleep(20);
++}
++
++//============================================================
++//  blit_lock_reset
++//  (window thread)
++//============================================================
++
++void blit_lock_reset ()
++{
++	blit_unlock = TRUE;
++	mame_printf_verbose("blit_unlock = TRUE\n");
++}
++
++//============================================================
++//  blit_lock_release
++//  (window thread)
++//============================================================
++
++void blit_lock_release ()
++{
++	Sleep(20);
++	blit_unlock = FALSE;
++	blit_lock = FALSE;
++	mame_printf_verbose("blit_lock = FALSE\n");
++}
+ 
+ //============================================================
+ //  winwindow_video_window_update
+@@ -787,18 +875,14 @@
+ 	}
+ 
+ 	// if we're visible and running and not in the middle of a resize, draw
+-	if (window->hwnd != NULL && window->target != NULL && window->drawdata != NULL)
++	if ((!multithreading_enabled || !blit_lock) && window->hwnd != NULL && window->target != NULL && window->drawdata != NULL)
+ 	{
+ 		int got_lock = TRUE;
+ 
+ 		mtlog_add("winwindow_video_window_update: try lock");
+ 
+-		// only block if we're throttled
+-		if (window->machine().video().throttled() || timeGetTime() - last_update_time > 250)
+-			osd_lock_acquire(window->render_lock);
+-		else
+-			got_lock = osd_lock_try(window->render_lock);
+-
++		got_lock = osd_lock_try(window->render_lock);
++		
+ 		// only render if we were able to get the lock
+ 		if (got_lock)
+ 		{
+@@ -808,6 +892,15 @@
+ 
+ 			// don't hold the lock; we just used it to see if rendering was still happening
+ 			osd_lock_release(window->render_lock);
++			
++			// check resolution change
++			if (window->machine().options().changeres() 
++				&& window->machine().switchRes.resolution.changeres
++				&& video_config.switchres)
++			{
++				switchres_resolution_change(window);
++				return;
++			}
+ 
+ 			// ensure the target bounds are up-to-date, and then get the primitives
+ 			primlist = (*draw.window_get_primitives)(window);
+@@ -815,8 +908,14 @@
+ 			// post a redraw request with the primitive list as a parameter
+ 			last_update_time = timeGetTime();
+ 			mtlog_add("winwindow_video_window_update: PostMessage start");
+-			if (multithreading_enabled)
+-				PostMessage(window->hwnd, WM_USER_REDRAW, 0, (LPARAM)primlist);
++			if (multithreading_enabled && video_config.mode != VIDEO_MODE_GDI)
++			{
++				window->primlist = primlist;
++				SetEvent(blit_pending);
++			
++				if ((video_config.waitvsync && window->machine().video().throttled()))
++					WaitForSingleObject(blit_done, 1000);
++			}
+ 			else
+ 				SendMessage(window->hwnd, WM_USER_REDRAW, 0, (LPARAM)primlist);
+ 			mtlog_add("winwindow_video_window_update: PostMessage end");
+@@ -1294,6 +1393,7 @@
+ 		// finish off by trying to initialize DirectX; if we fail, ignore it
+ 		if ((*draw.window_init)(window))
+ 			return 1;
++			else blit_lock_reset();
+ 		ShowWindow(window->hwnd, SW_SHOW);
+ 	}
+ 
+@@ -1330,12 +1430,15 @@
+ 		// paint: redraw the last bitmap
+ 		case WM_PAINT:
+ 		{
++			mame_printf_verbose("window_proc: WM_PAINT\n");
+ 			PAINTSTRUCT pstruct;
+ 			HDC hdc = BeginPaint(wnd, &pstruct);
+ 			draw_video_contents(window, hdc, TRUE);
+ 			if (win_has_menu(window))
+ 				DrawMenuBar(window->hwnd);
+ 			EndPaint(wnd, &pstruct);
++			if (blit_unlock) blit_lock_release();
++			mame_printf_verbose("window_proc: WM_PAINT:END\n");
+ 			break;
+ 		}
+ 
+@@ -1431,6 +1534,7 @@
+ 		// syscommands: catch win_start_maximized
+ 		case WM_SYSCOMMAND:
+ 		{
++			mame_printf_verbose("window_proc: WM_SYSCOMMAND %d\n", (UINT32)wparam);
+ 			// prevent screensaver or monitor power events
+ 			if (wparam == SC_MONITORPOWER || wparam == SC_SCREENSAVE)
+ 				return 1;
+@@ -1438,7 +1542,7 @@
+ 			// most SYSCOMMANDs require us to invalidate the window
+ 			InvalidateRect(wnd, NULL, FALSE);
+ 
+-			// handle maximize
++			// handle maximize & minimize
+ 			if ((wparam & 0xfff0) == SC_MAXIMIZE)
+ 			{
+ 				update_minmax_state(window);
+@@ -1448,6 +1552,9 @@
+ 					maximize_window(window);
+ 				break;
+ 			}
++			else if ((wparam & 0xfff0) == SC_MINIMIZE) blit_lock_set();
++			else if ((wparam & 0xfff0) == SC_RESTORE) blit_lock_reset();
++			
+ 			return DefWindowProc(wnd, message, wparam, lparam);
+ 		}
+ 
+@@ -1466,6 +1573,8 @@
+ 
+ 		// destroy: clean up all attached rendering bits and NULL out our hwnd
+ 		case WM_DESTROY:
++			mame_printf_verbose("window_proc: WM_DESTROY\n");
++			blit_lock_set();
+ 			(*draw.window_destroy)(window);
+ 			window->hwnd = NULL;
+ 			return DefWindowProc(wnd, message, wparam, lparam);
+@@ -1491,7 +1600,18 @@
+ 
+ 		// fullscreen set
+ 		case WM_USER_SET_FULLSCREEN:
++			mame_printf_verbose("window_proc: WM_USER_SET_FULLSCREEN\n");
++			blit_lock_set();
+ 			set_fullscreen(window, wparam);
++			mame_printf_verbose("window_proc: WM_USER_SET_FULLSCREEN_END\n");
++			break;
++
++		// Resolution change
++		case WM_USER_CHANGERES:
++			mame_printf_verbose("window_proc: WM_USER_CHANGERES\n");
++			blit_lock_set();
++			(*draw.window_destroy)(window);
++			if (!(*draw.window_init)(window)) blit_lock_reset();
+ 			break;
+ 
+ 		// minimum size set
+@@ -1503,6 +1623,11 @@
+ 		case WM_USER_SET_MAXSIZE:
+ 			maximize_window(window);
+ 			break;
++			case WM_NCACTIVATE:
++			mame_printf_verbose("window_proc: WM_NCACTIVATE\n");
++			if (window->fullscreen && !blit_lock && !IsIconic(window->hwnd)) blit_lock_set();
++			return DefWindowProc(wnd, message, wparam, lparam);
++	
+ 
+ 		// set focus: if we're not the primary window, switch back
+ 		// commented out ATM because this prevents us from resizing secondary windows
+@@ -1978,6 +2103,7 @@
+ 			ShowWindow(window->hwnd, SW_SHOW);
+ 		if ((*draw.window_init)(window))
+ 			exit(1);
++			else blit_lock_reset();
+ 	}
+ 
+ 	// ensure we're still adjusted correctly
+diff -Nru src/osd/windows/windows.mak src/osd/windows/windows.mak
+--- src/osd/windows/windows.mak	2012-07-08 12:52:00.000000000 +0200
++++ src/osd/windows/windows.mak	2012-07-08 13:15:43.000000000 +0200
+@@ -306,7 +306,9 @@
+ 	$(WINOBJ)/video.o \
+ 	$(WINOBJ)/window.o \
+ 	$(WINOBJ)/winmenu.o \
+-	$(WINOBJ)/winmain.o
++	$(WINOBJ)/winmain.o \
++	$(WINOBJ)/switchres.o \
++	$(WINOBJ)/pstrip.o
+ 
+ ifdef USE_NETWORK
+ OSDOBJS += \
+diff -Nru src/osd/windows/winmain.c src/osd/windows/winmain.c
+--- src/osd/windows/winmain.c	2012-07-08 12:50:02.000000000 +0200
++++ src/osd/windows/winmain.c	2012-07-08 13:15:43.000000000 +0200
+@@ -77,6 +77,8 @@
+ 
+ #define DEBUG_SLOW_LOCKS	0
+ 
++extern bool switchres_modeline_setup(running_machine &machine);
++extern bool switchres_modeline_remove(running_machine &machine);
+ 
+ //**************************************************************************
+ //  MACROS
+@@ -304,31 +306,30 @@
+ 	// performance options
+ 	{ NULL,                                           NULL,       OPTION_HEADER,     "WINDOWS PERFORMANCE OPTIONS" },
+ 	{ WINOPTION_PRIORITY "(-15-1)",                   "0",        OPTION_INTEGER,    "thread priority for the main game thread; range from -15 to 1" },
+-	{ WINOPTION_MULTITHREADING ";mt",                 "0",        OPTION_BOOLEAN,    "enable multithreading; this enables rendering and blitting on a separate thread" },
++	{ WINOPTION_MULTITHREADING ";mt",                 "1",        OPTION_BOOLEAN,    "enable multithreading; this enables rendering and blitting on a separate thread" },
+ 	{ WINOPTION_NUMPROCESSORS ";np",                  "auto",     OPTION_STRING,	 "number of processors; this overrides the number the system reports" },
+ 	{ WINOPTION_PROFILE,                              "0",        OPTION_INTEGER,    "enable profiling, specifying the stack depth to track" },
+ 	{ WINOPTION_BENCH,                                "0",        OPTION_INTEGER,    "benchmark for the given number of emulated seconds; implies -video none -nosound -nothrottle" },
+ 
+ 	// video options
+ 	{ NULL,                                           NULL,       OPTION_HEADER,     "WINDOWS VIDEO OPTIONS" },
+-	{ WINOPTION_VIDEO,                                "d3d",      OPTION_STRING,     "video output method: none, gdi, ddraw, or d3d" },
++	{ WINOPTION_VIDEO,                                "ddraw",      OPTION_STRING,     "video output method: none, gdi, ddraw, or d3d" },
+ 	{ WINOPTION_NUMSCREENS "(1-4)",                   "1",        OPTION_INTEGER,    "number of screens to create; usually, you want just one" },
+ 	{ WINOPTION_WINDOW ";w",                          "0",        OPTION_BOOLEAN,    "enable window mode; otherwise, full screen mode is assumed" },
+ 	{ WINOPTION_MAXIMIZE ";max",                      "1",        OPTION_BOOLEAN,    "default to maximized windows; otherwise, windows will be minimized" },
+-	{ WINOPTION_KEEPASPECT ";ka",                     "1",        OPTION_BOOLEAN,    "constrain to the proper aspect ratio" },
++	{ WINOPTION_KEEPASPECT ";ka",                     "0",        OPTION_BOOLEAN,    "constrain to the proper aspect ratio" },
+ 	{ WINOPTION_PRESCALE,                             "1",        OPTION_INTEGER,    "scale screen rendering by this amount in software" },
+-	{ WINOPTION_WAITVSYNC ";vs",                      "0",        OPTION_BOOLEAN,    "enable waiting for the start of VBLANK before flipping screens; reduces tearing effects" },
+-	{ WINOPTION_SYNCREFRESH ";srf",                   "0",        OPTION_BOOLEAN,    "enable using the start of VBLANK for throttling instead of the game time" },
++	{ WINOPTION_WAITVSYNC ";vs",                      "1",        OPTION_BOOLEAN,    "enable waiting for the start of VBLANK before flipping screens; reduces tearing effects" },
+ 	{ WINOPTION_MENU,           		              "0",        OPTION_BOOLEAN,    "enable menu bar if available by UI implementation" },
+ 
+ 	// DirectDraw-specific options
+ 	{ NULL,                                           NULL,       OPTION_HEADER,     "DIRECTDRAW-SPECIFIC OPTIONS" },
+-	{ WINOPTION_HWSTRETCH ";hws",                     "1",        OPTION_BOOLEAN,    "enable hardware stretching" },
++	{ WINOPTION_HWSTRETCH ";hws",                     "0",        OPTION_BOOLEAN,    "enable hardware stretching" },
+ 
+ 	// Direct3D-specific options
+ 	{ NULL,                                           NULL,       OPTION_HEADER,     "DIRECT3D-SPECIFIC OPTIONS" },
+ 	{ WINOPTION_D3DVERSION "(8-9)",                   "9",        OPTION_INTEGER,    "specify the preferred Direct3D version (8 or 9)" },
+-	{ WINOPTION_FILTER ";d3dfilter;flt",              "1",        OPTION_BOOLEAN,    "enable bilinear filtering on screen output" },
++	{ WINOPTION_FILTER ";d3dfilter;flt",              "0",        OPTION_BOOLEAN,    "enable bilinear filtering on screen output" },
+ 
+ 	// post-processing options
+ 	{ NULL,                                             		NULL,        OPTION_HEADER,     "DIRECT3D POST-PROCESSING OPTIONS" },
+@@ -417,7 +418,7 @@
+ 	// full screen options
+ 	{ NULL,                                           NULL,       OPTION_HEADER,     "FULL SCREEN OPTIONS" },
+ 	{ WINOPTION_TRIPLEBUFFER ";tb",                   "0",        OPTION_BOOLEAN,    "enable triple buffering" },
+-	{ WINOPTION_SWITCHRES,                            "0",        OPTION_BOOLEAN,    "enable resolution switching" },
++	{ WINOPTION_SWITCHRES,                            "1",        OPTION_BOOLEAN,    "enable resolution switching" },
+ 	{ WINOPTION_FULLSCREENBRIGHTNESS ";fsb(0.1-2.0)", "1.0",      OPTION_FLOAT,      "brightness value in full screen mode" },
+ 	{ WINOPTION_FULLSCREENCONTRAST ";fsc(0.1-2.0)",   "1.0",      OPTION_FLOAT,      "contrast value in full screen mode" },
+ 	{ WINOPTION_FULLSCREENGAMMA ";fsg(0.1-3.0)",      "1.0",      OPTION_FLOAT,      "gamma value in full screen mode" },
+@@ -593,6 +594,10 @@
+ 
+ 	const char *stemp;
+ 	windows_options &options = downcast<windows_options &>(machine.options());
++	
++	// Switchres
++	if (machine.options().modeline()) 
++		switchres_modeline_setup(machine);
+ 
+ 	// determine if we are benchmarking, and adjust options appropriately
+ 	int bench = options.bench();
+@@ -703,6 +708,10 @@
+ 
+ void windows_osd_interface::osd_exit(running_machine &machine)
+ {
++	// Remove Switchres
++	if (machine.options().modeline() && machine.switchRes.resolution.count)
++		switchres_modeline_remove(machine);
++
+ 	// no longer have a machine
+ 	g_current_machine = NULL;
+ 
+diff -Nru src/osd/windows/winmain.h src/osd/windows/winmain.h
+--- src/osd/windows/winmain.h	2012-07-08 13:13:00.000000000 +0200
++++ src/osd/windows/winmain.h	2012-07-08 13:15:43.000000000 +0200
+@@ -68,7 +68,6 @@
+ #define WINOPTION_KEEPASPECT			"keepaspect"
+ #define WINOPTION_PRESCALE				"prescale"
+ #define WINOPTION_WAITVSYNC				"waitvsync"
+-#define WINOPTION_SYNCREFRESH			"syncrefresh"
+ #define WINOPTION_MENU					"menu"
+ 
+ // DirectDraw-specific options
+@@ -184,7 +183,6 @@
+ 	bool keep_aspect() const { return bool_value(WINOPTION_KEEPASPECT); }
+ 	int prescale() const { return int_value(WINOPTION_PRESCALE); }
+ 	bool wait_vsync() const { return bool_value(WINOPTION_WAITVSYNC); }
+-	bool sync_refresh() const { return bool_value(WINOPTION_SYNCREFRESH); }
+ 	bool menu() const { return bool_value(WINOPTION_MENU); }
+ 
+ 	// DirectDraw-specific options
