@@ -1900,7 +1900,8 @@ $(MAMEOBJ)/misc.a: \
 	$(DRIVERS)/tmspoker.o \
 	$(DRIVERS)/manohman.o \
 	$(DRIVERS)/jankenmn.o \
-	$(DRIVERS)/cavesh3.o \
+#Cave SH3
+#	$(DRIVERS)/cavesh3.o \
 	$(DRIVERS)/wildpkr.o \
 
 
@@ -2240,6 +2241,7 @@ $(VIDEO)/model3.o:	$(MAMESRC)/video/m3raster.c
 $(VIDEO)/n64.o:		$(MAMESRC)/video/rdpfiltr.c
 $(DRIVERS)/bfm_sc4.o: $(MAMESRC)/includes/bfm_sc45.h
 $(DRIVERS)/bfm_sc5.o: $(MAMESRC)/includes/bfm_sc45.h
-$(DRIVERS)/cavesh3.o: $(MAMESRC)/drivers/csh3blit.c
+#Cave SH3
+#$(DRIVERS)/cavesh3.o: $(MAMESRC)/drivers/csh3blit.c
 
 
