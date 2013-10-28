@@ -1884,7 +1884,7 @@ $(MAMEOBJ)/misc.a: \
 	$(DRIVERS)/vcombat.o \
 	$(DRIVERS)/vectrex.o $(VIDEO)/vectrex.o $(MACHINE)/vectrex.o \
 	$(DRIVERS)/videopkr.o \
-    $(DRIVERS)/voyager.o \
+    	$(DRIVERS)/voyager.o \
 	$(DRIVERS)/vp101.o \
 	$(DRIVERS)/vpoker.o \
 	$(DRIVERS)/vroulet.o \
@@ -1900,11 +1900,9 @@ $(MAMEOBJ)/misc.a: \
 	$(DRIVERS)/tmspoker.o \
 	$(DRIVERS)/manohman.o \
 	$(DRIVERS)/jankenmn.o \
-#Cave SH3
-#	$(DRIVERS)/cavesh3.o \
 	$(DRIVERS)/wildpkr.o \
 
-
+#$(DRIVERS)/cavesh3.o \
 #-------------------------------------------------
 # layout dependencies
 #-------------------------------------------------
@@ -2242,6 +2240,6 @@ $(VIDEO)/n64.o:		$(MAMESRC)/video/rdpfiltr.c
 $(DRIVERS)/bfm_sc4.o: $(MAMESRC)/includes/bfm_sc45.h
 $(DRIVERS)/bfm_sc5.o: $(MAMESRC)/includes/bfm_sc45.h
 #Cave SH3
-#$(DRIVERS)/cavesh3.o: $(MAMESRC)/drivers/csh3blit.c
+$(DRIVERS)/cavesh3.o: $(MAMESRC)/drivers/csh3blit.c
 
 
