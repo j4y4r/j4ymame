@@ -1902,6 +1902,7 @@ $(MAMEOBJ)/misc.a: \
 	$(DRIVERS)/jankenmn.o \
 	$(DRIVERS)/wildpkr.o \
 
+#Cave SH3 
 #$(DRIVERS)/cavesh3.o \
 #-------------------------------------------------
 # layout dependencies
@@ -2240,6 +2241,6 @@ $(VIDEO)/n64.o:		$(MAMESRC)/video/rdpfiltr.c
 $(DRIVERS)/bfm_sc4.o: $(MAMESRC)/includes/bfm_sc45.h
 $(DRIVERS)/bfm_sc5.o: $(MAMESRC)/includes/bfm_sc45.h
 #Cave SH3
-$(DRIVERS)/cavesh3.o: $(MAMESRC)/drivers/csh3blit.c
+#$(DRIVERS)/cavesh3.o: $(MAMESRC)/drivers/csh3blit.c
 
 
